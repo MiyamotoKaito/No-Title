@@ -49,4 +49,17 @@ public:
 	 * @param OutLifetimeProps 
 	 */
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/**
+	 *  AttributeのCurrentValueが変更される前に呼ぶ
+	 * @param Attribute 変更される Attribute
+	 * @param NewValue 変更後の値
+	 */
+	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
+
+	/**
+	 * BaseValueが変更された時に呼ばれる
+	 * @param Data 実行された Effect、対象 Attribute、変化量などの情報
+	 */
+	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
 };
