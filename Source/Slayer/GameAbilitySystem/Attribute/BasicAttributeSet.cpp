@@ -65,7 +65,7 @@ void UBasicAttributeSet::PostGameplayEffectExecute(const struct FGameplayEffectM
 	{
 		SetHealth(GetHealth());
 	}
-	else if (Data.EvaluatedData.Attribute == GetMaxHealthAttribute())
+	else if (Data.EvaluatedData.Attribute == GetStaminaAttribute())
 	{
 		SetStamina(GetStamina());
 	}
