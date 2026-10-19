@@ -46,8 +46,7 @@ void UBasicAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 	
-	if (Attribute == GetHealthAttribute())
-	{
+	if (Attribute == GetHealthAttribute())	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxHealth());
 	}
 	
