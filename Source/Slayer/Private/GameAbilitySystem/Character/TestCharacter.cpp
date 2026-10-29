@@ -38,6 +38,39 @@ UAbilitySystemComponent* ATestCharacter::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+TArray<FGameplayAbilitySpecHandle> ATestCharacter::GrantAtlibites(TArray<TSubclassOf<UGameplayAbility>> GrantToAbilities)
+{
+	// ASCが未生成、またはサーバー以外では付与しない（アビリティの付与はサーバーのみ）
+	if (!AbilitySystemComponent || !HasAuthority())
+	{
+		return TArray<FGameplayAbilitySpecHandle>();
+	}
+	
+	TArray<FGameplayAbilitySpecHandle> AbilityHandles;
+	for (TSubclassOf<UGameplayAbility> Ability : GrantToAbilities)
+	{
+		FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
+			FGameplayAbilitySpec(Ability, 1, -1, this));
+		AbilityHandles.Add(SpecHandle);
+	}
+	
+	SendAbilitiesChangedEvent();
+	return AbilityHandles;
+}
+
+void ATestCharacter::RemoveAbilities(TArray<FGameplayAbilitySpecHandle> AbilityHandlesToRemove)
+{
+	if (!AbilitySystemComponent || !HasAuthority())
+	{
+		return;
+	}
+	
+	for (FGameplayAbilitySpecHandle Ability : AbilityHandlesToRemove)
+	{
+		AbilitySystemComponent->ClearAbility(Ability);
+	}
+}
+
 void ATestCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
