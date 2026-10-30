@@ -54,7 +54,6 @@ TArray<FGameplayAbilitySpecHandle> ATestCharacter::GrantAtlibites(TArray<TSubcla
 		AbilityHandles.Add(SpecHandle);
 	}
 	
-	SendAbilitiesChangedEvent();
 	return AbilityHandles;
 }
 
