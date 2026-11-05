@@ -38,7 +38,7 @@ UAbilitySystemComponent* ATestCharacter::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
-TArray<FGameplayAbilitySpecHandle> ATestCharacter::GrantAtlibites(TArray<TSubclassOf<UGameplayAbility>> GrantToAbilities)
+TArray<FGameplayAbilitySpecHandle> ATestCharacter::GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> GrantToAbilities)
 {
 	// ASCが未生成、またはサーバー以外では付与しない（アビリティの付与はサーバーのみ）
 	if (!AbilitySystemComponent || !HasAuthority())
