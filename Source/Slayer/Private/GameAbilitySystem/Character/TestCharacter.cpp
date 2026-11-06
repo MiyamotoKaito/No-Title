@@ -2,7 +2,7 @@
 
 
 #include "TestCharacter.h"
-
+#include "EnhancedInputComponent.h"
 
 // Sets default values
 ATestCharacter::ATestCharacter()
@@ -89,10 +89,45 @@ void ATestCharacter::PossessedBy(AController* NewController)
 		AbilitySystemComponent->InitAbilityActorInfo(this,this);
 	}
 }
-// Called to bind functionality to input
+
+void ATestCharacter::OnPressed(FGameplayTag Tag)
+{
+	UE_LOG(LogTemp, Log, TEXT("%s : Pressed"), *Tag.ToString());
+}
+
+void ATestCharacter::OnReleased(FGameplayTag Tag)
+{
+	UE_LOG(LogTemp, Log, TEXT("%s : Released"), *Tag.ToString());
+}
+
 void ATestCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+	UEnhancedInputComponent* action = Cast<UEnhancedInputComponent>(PlayerInputComponent);
+	if (action == nullptr || InputDataAsset == nullptr)
+	{
+		return;
+	}
+	
+	for (const auto& InputData : InputDataAsset->InputActionsData)
+	{
+		if (InputData.Action == nullptr || !InputData.ActionTag.IsValid())
+		{
+			continue;
+		}
+		
+		action->BindAction(InputData.Action, 
+			ETriggerEvent::Started,
+			this,
+			&ATestCharacter::OnPressed,
+			InputData.ActionTag);
+		
+		action->BindAction(InputData.Action,
+			ETriggerEvent::Completed,
+			this,
+			&ATestCharacter::OnReleased,
+			InputData.ActionTag);
+	}
 }
 
