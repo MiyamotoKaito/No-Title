@@ -50,6 +50,10 @@ TArray<FGameplayAbilitySpecHandle> ATestCharacter::GrantAbilities(const TArray<F
 
 	for (const auto& AbilityData : GrantToAbilities)
 	{
+		if (!AbilityData.AbilityClass)
+		{
+			continue;
+		}
 		// Spec(入れ子)を作成
 		FGameplayAbilitySpec Spec;
 		Spec = FGameplayAbilitySpec(AbilityData.AbilityClass, 1,-1, this);
@@ -102,11 +106,59 @@ void ATestCharacter::PossessedBy(AController* NewController)
 void ATestCharacter::OnPressed(FGameplayTag Tag)
 {
 	UE_LOG(LogTemp, Log, TEXT("%s : Pressed"), *Tag.ToString());
+	if (AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+	
+	auto& SpecArray = AbilitySystemComponent->GetActivatableAbilities();
+	for (auto& Spec : SpecArray)
+	{
+		FGameplayTagContainer GameplayTags = Spec.GetDynamicSpecSourceTags();
+		if (!GameplayTags.HasTagExact(Tag))
+		{
+			continue;
+		}
+		if (Spec.IsActive())
+		{
+			AbilitySystemComponent->AbilitySpecInputPressed(Spec);
+			AbilitySystemComponent->InvokeReplicatedEvent(
+				EAbilityGenericReplicatedEvent::InputPressed,
+				Spec.Handle,
+				Spec.GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
+		}
+		else
+		{
+			AbilitySystemComponent->TryActivateAbility(Spec.Handle, true);
+		}
+	}
 }
 
 void ATestCharacter::OnReleased(FGameplayTag Tag)
 {
 	UE_LOG(LogTemp, Log, TEXT("%s : Released"), *Tag.ToString());
+	if (AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+	
+	auto& SpecArray = AbilitySystemComponent->GetActivatableAbilities();
+	for (auto& Spec : SpecArray)
+	{
+		FGameplayTagContainer GameplayTags = Spec.GetDynamicSpecSourceTags();
+		if (!GameplayTags.HasTagExact(Tag))
+		{
+			continue;
+		}
+		if (Spec.IsActive())
+		{
+			AbilitySystemComponent->AbilitySpecInputReleased(Spec);
+			AbilitySystemComponent->InvokeReplicatedEvent(
+				EAbilityGenericReplicatedEvent::InputReleased,
+				Spec.Handle,
+				Spec.GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
+		}
+	}
 }
 
 void ATestCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
