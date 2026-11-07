@@ -38,7 +38,7 @@ UAbilitySystemComponent* ATestCharacter::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
-TArray<FGameplayAbilitySpecHandle> ATestCharacter::GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> GrantToAbilities)
+TArray<FGameplayAbilitySpecHandle> ATestCharacter::GrantAbilities(const TArray<FAbilityData>& GrantToAbilities)
 {
 	// ASCが未生成、またはサーバー以外では付与しない（アビリティの付与はサーバーのみ）
 	if (!AbilitySystemComponent || !HasAuthority())
@@ -47,13 +47,22 @@ TArray<FGameplayAbilitySpecHandle> ATestCharacter::GrantAbilities(TArray<TSubcla
 	}
 	
 	TArray<FGameplayAbilitySpecHandle> AbilityHandles;
-	for (TSubclassOf<UGameplayAbility> Ability : GrantToAbilities)
+
+	for (const auto& AbilityData : GrantToAbilities)
 	{
-		FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(
-			FGameplayAbilitySpec(Ability, 1, -1, this));
+		// Spec(入れ子)を作成
+		FGameplayAbilitySpec Spec;
+		Spec = FGameplayAbilitySpec(AbilityData.AbilityClass, 1,-1, this);
+		if (AbilityData.InputTag.IsValid())
+		{
+			// コンテナからSpecを取り出してタグを追加
+			Spec.GetDynamicSpecSourceTags().AddTag(AbilityData.InputTag);
+		}
+		// Specの番号(Key)を作成
+		// SpecのTagなどが紐づけられたアビリティを付与
+		FGameplayAbilitySpecHandle SpecHandle = AbilitySystemComponent->GiveAbility(Spec);
 		AbilityHandles.Add(SpecHandle);
 	}
-	
 	return AbilityHandles;
 }
 

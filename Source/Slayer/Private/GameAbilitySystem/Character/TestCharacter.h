@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
+#include "GameAbilitySystem/AbilityData.h"
 #include "GameAbilitySystem/InputDataAsset.h"
 #include "GameFramework/Character.h"
 #include "Slayer/GameAbilitySystem/Attribute/BasicAttributeSet.h"
@@ -24,7 +25,7 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
-	TArray<FGameplayAbilitySpecHandle> GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> GrantToAbilities); 
+	TArray<FGameplayAbilitySpecHandle> GrantAbilities(const TArray<FAbilityData>& GrantToAbilities); 
 	
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
 	void RemoveAbilities(TArray<FGameplayAbilitySpecHandle> AbilityHandlesToRemove);
@@ -49,6 +50,8 @@ protected:
 	EGameplayEffectReplicationMode ReplicationMode = EGameplayEffectReplicationMode:: Mixed;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputDataAsset> InputDataAsset;
+	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "Abilities")
+	TArray<FAbilityData> ConstructAbilities;
 private:
 	void OnPressed(FGameplayTag Tag);
 	void OnReleased(FGameplayTag Tag);
