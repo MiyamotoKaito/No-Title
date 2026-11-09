@@ -50,9 +50,9 @@ void UBasicAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxHealth());
 	}
 	
-	else if (Attribute == GetMaxHealthAttribute())
+	else if (Attribute == GetStaminaAttribute())
 	{
-		NewValue = FMath::Clamp(NewValue, 0.0f, GetStamina());
+		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxStamina());
 	}
 }
 
