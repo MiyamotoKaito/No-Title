@@ -2,6 +2,20 @@
 
 Unreal Engine **5.8** の C++ ゲームプロジェクト。GAS（Gameplay Ability System）を軸にしたアクション系。
 
+## ゲーム概要（企画書・設計書）
+
+倒したボスを砕いて獲得し、次の戦いではそのボス自身として戦える三人称3DのPvEボスバトル（通常ボス：シングル / レイドボス：マルチ）。
+
+- 企画書: @Docs/GameProposal.md — コンセプト、コアループ（倒す→砕く→獲得→育成）、クラス設計、ロードマップ
+- 設計書（ゲームフロー）: @Docs/GameFlowDesign.md — 画面/フェーズ遷移（`EBattlePhase`）、レベル分け、ブレイクシステム、Subsystemによるデータ受け渡し
+
+設計判断はこの2つに沿う。要点:
+
+- 同じボスクラスを AIController / PlayerController の Possess 切り替えで敵/プレイアブル兼用。技は GA として AI とプレイヤーで共有（プレイアブル用に別の技セットは作らない）。
+- キャラ切り替えはアビリティ付け替えではなく**ポーンごと乗り換え**（Spawn → Possess → 初期化 → IMC差し替え → 旧ポーンDestroy）。
+- バトル内の流れは `ABattleGameMode::SetPhase()` + `OnPhaseChanged` デリゲートで管理。画面をまたぐデータは GameInstanceSubsystem に持たせる。
+- 開発順: まずボス1体で「倒す→砕く→獲得→プレイアブル化」を縦に通してから広げる。
+
 ## プロジェクト構成
 
 - **モジュール**: `Slayer`（Runtime, LoadingPhase: Default）
