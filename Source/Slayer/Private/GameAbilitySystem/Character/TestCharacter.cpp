@@ -106,59 +106,17 @@ void ATestCharacter::PossessedBy(AController* NewController)
 void ATestCharacter::OnPressed(FGameplayTag Tag)
 {
 	UE_LOG(LogTemp, Log, TEXT("%s : Pressed"), *Tag.ToString());
-	if (AbilitySystemComponent == nullptr)
-	{
-		return;
-	}
-	
-	auto& SpecArray = AbilitySystemComponent->GetActivatableAbilities();
-	for (auto& Spec : SpecArray)
-	{
-		FGameplayTagContainer GameplayTags = Spec.GetDynamicSpecSourceTags();
-		if (!GameplayTags.HasTagExact(Tag))
-		{
-			continue;
-		}
-		if (Spec.IsActive())
-		{
-			AbilitySystemComponent->AbilitySpecInputPressed(Spec);
-			AbilitySystemComponent->InvokeReplicatedEvent(
-				EAbilityGenericReplicatedEvent::InputPressed,
-				Spec.Handle,
-				Spec.GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
-		}
-		else
-		{
-			AbilitySystemComponent->TryActivateAbility(Spec.Handle, true);
-		}
-	}
+	PressAbilityInput(Tag);
 }
 
 void ATestCharacter::OnReleased(FGameplayTag Tag)
 {
 	UE_LOG(LogTemp, Log, TEXT("%s : Released"), *Tag.ToString());
-	if (AbilitySystemComponent == nullptr)
-	{
-		return;
-	}
-	
-	auto& SpecArray = AbilitySystemComponent->GetActivatableAbilities();
-	for (auto& Spec : SpecArray)
-	{
-		FGameplayTagContainer GameplayTags = Spec.GetDynamicSpecSourceTags();
-		if (!GameplayTags.HasTagExact(Tag))
-		{
-			continue;
-		}
-		if (Spec.IsActive())
-		{
-			AbilitySystemComponent->AbilitySpecInputReleased(Spec);
-			AbilitySystemComponent->InvokeReplicatedEvent(
-				EAbilityGenericReplicatedEvent::InputReleased,
-				Spec.Handle,
-				Spec.GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
-		}
-	}
+	ReleaseAbilityInput(Tag);
+}
+
+void ATestCharacter::SendInputEvent(const FGameplayAbilitySpec& Spec, EAbilityGenericReplicatedEvent::Type EventType)
+{
 }
 
 void ATestCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -192,3 +150,83 @@ void ATestCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	}
 }
 
+bool ATestCharacter::PressAbilityInput(FGameplayTag InputGameplayTag)
+{
+	if (AbilitySystemComponent == nullptr || !InputGameplayTag.IsValid())
+	{
+		return false;
+	}
+	
+	bool bHandled = false;
+	
+	// ループ中にアビリティの追加、削除が起きても配列が崩れないようにする。
+	FScopedAbilityListLock AbilityListLock(*AbilitySystemComponent);
+	// 発動可能なアビリティの配列の参照を取得
+	auto& SpecArray = AbilitySystemComponent->GetActivatableAbilities();
+	for (auto& Spec : SpecArray)
+	{
+		const FGameplayTagContainer& GameplayTags = Spec.GetDynamicSpecSourceTags();
+		if (!GameplayTags.HasTagExact(InputGameplayTag))
+		{
+			continue;
+		}
+		bHandled = true;
+		if (Spec.IsActive())
+		{
+			AbilitySystemComponent->AbilitySpecInputPressed(Spec);
+			
+			if (Spec.GetPrimaryInstance() == nullptr)
+				return false;
+			
+			AbilitySystemComponent->InvokeReplicatedEvent(
+				EAbilityGenericReplicatedEvent::InputPressed,
+				Spec.Handle,
+				Spec.GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
+		}
+		else
+		{
+			AbilitySystemComponent->TryActivateAbility(Spec.Handle, true);
+		}
+	}
+	return bHandled;
+}
+
+void ATestCharacter::ReleaseAbilityInput(FGameplayTag InputGameplayTag)
+{
+	if (AbilitySystemComponent == nullptr || !InputGameplayTag.IsValid())
+	{
+		return;
+	}
+	// ループ中にアビリティの追加、削除が起きても配列が崩れないようにする。
+	FScopedAbilityListLock AbilityListLock(*AbilitySystemComponent);
+	
+	auto& SpecArray = AbilitySystemComponent->GetActivatableAbilities();
+	for (auto& Spec : SpecArray)
+	{
+		FGameplayTagContainer GameplayTags = Spec.GetDynamicSpecSourceTags();
+		if (!GameplayTags.HasTagExact(InputGameplayTag))
+		{
+			continue;
+		}
+		if (Spec.IsActive())
+		{
+			AbilitySystemComponent->AbilitySpecInputReleased(Spec);
+			AbilitySystemComponent->InvokeReplicatedEvent(
+				EAbilityGenericReplicatedEvent::InputReleased,
+				Spec.Handle,
+				Spec.GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
+		}
+	}
+}
+
+bool ATestCharacter::IsAbilityInputActive(FGameplayTag InputTag) const
+{
+	for (const FGameplayAbilitySpec* Spec : FindSpecsByInputTag(InputTag))
+	{
+		if (Spec->IsActive())
+		{
+			return true;
+		}
+	}
+	return false;
+}
