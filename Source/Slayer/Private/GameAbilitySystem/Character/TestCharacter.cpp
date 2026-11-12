@@ -115,10 +115,6 @@ void ATestCharacter::OnReleased(FGameplayTag Tag)
 	ReleaseAbilityInput(Tag);
 }
 
-void ATestCharacter::SendInputEvent(const FGameplayAbilitySpec& Spec, EAbilityGenericReplicatedEvent::Type EventType)
-{
-}
-
 void ATestCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
@@ -176,7 +172,9 @@ bool ATestCharacter::PressAbilityInput(FGameplayTag InputGameplayTag)
 			AbilitySystemComponent->AbilitySpecInputPressed(Spec);
 			
 			if (Spec.GetPrimaryInstance() == nullptr)
-				return false;
+			{
+				continue;
+			}
 			
 			AbilitySystemComponent->InvokeReplicatedEvent(
 				EAbilityGenericReplicatedEvent::InputPressed,
@@ -203,6 +201,11 @@ void ATestCharacter::ReleaseAbilityInput(FGameplayTag InputGameplayTag)
 	auto& SpecArray = AbilitySystemComponent->GetActivatableAbilities();
 	for (auto& Spec : SpecArray)
 	{
+		if (Spec.GetPrimaryInstance() == nullptr)
+		{
+			continue;
+		}
+		
 		FGameplayTagContainer GameplayTags = Spec.GetDynamicSpecSourceTags();
 		if (!GameplayTags.HasTagExact(InputGameplayTag))
 		{
