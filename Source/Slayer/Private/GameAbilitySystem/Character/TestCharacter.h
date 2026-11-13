@@ -46,7 +46,7 @@ public:
 	 * 入力タグのGAが1つでも発動中なら true
 	 */
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem|Input")
-	bool IsAbilityInputActive(FGameplayTag InputTag) const;
+	bool IsAbilityInputActive(FGameplayTag InputTag);
 	
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "AbilitySystem")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
@@ -71,9 +71,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "AbilitySystem")
 	TArray<FAbilityData> ConstructAbilities;
 private:
-	void OnPressed(FGameplayTag Tag);
-	void OnReleased(FGameplayTag Tag);
-	// 入力タグが付いた Spec をすべて集める
-	TArray<FGameplayAbilitySpec*> FindSpecsByInputTag(FGameplayTag InputTag) const;
-	void SendInputEvent(const FGameplayAbilitySpec& Spec, EAbilityGenericReplicatedEvent::Type EventType);
+	/*
+	 * 
+	 */
+	TArray<FGameplayAbilitySpec>& FindSpecsByInputTag();
+	void OnPressed(FGameplayTag InputGameplayTag);
+	void OnReleased(FGameplayTag InputGameplayTag);
 };

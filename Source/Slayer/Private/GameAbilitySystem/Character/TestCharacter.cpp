@@ -103,16 +103,21 @@ void ATestCharacter::PossessedBy(AController* NewController)
 	}
 }
 
-void ATestCharacter::OnPressed(FGameplayTag Tag)
+TArray<FGameplayAbilitySpec>& ATestCharacter::FindSpecsByInputTag()
 {
-	UE_LOG(LogTemp, Log, TEXT("%s : Pressed"), *Tag.ToString());
-	PressAbilityInput(Tag);
+	return AbilitySystemComponent->GetActivatableAbilities();
 }
 
-void ATestCharacter::OnReleased(FGameplayTag Tag)
+void ATestCharacter::OnPressed(FGameplayTag InputGameplayTag)
 {
-	UE_LOG(LogTemp, Log, TEXT("%s : Released"), *Tag.ToString());
-	ReleaseAbilityInput(Tag);
+	UE_LOG(LogTemp, Log, TEXT("%s : Pressed"), *InputGameplayTag.ToString());
+	PressAbilityInput(InputGameplayTag);
+}
+
+void ATestCharacter::OnReleased(FGameplayTag InputGameplayTag)
+{
+	UE_LOG(LogTemp, Log, TEXT("%s : Released"), *InputGameplayTag.ToString());
+	ReleaseAbilityInput(InputGameplayTag);
 }
 
 void ATestCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -158,8 +163,7 @@ bool ATestCharacter::PressAbilityInput(FGameplayTag InputGameplayTag)
 	// ループ中にアビリティの追加、削除が起きても配列が崩れないようにする。
 	FScopedAbilityListLock AbilityListLock(*AbilitySystemComponent);
 	// 発動可能なアビリティの配列の参照を取得
-	auto& SpecArray = AbilitySystemComponent->GetActivatableAbilities();
-	for (auto& Spec : SpecArray)
+	for (auto& Spec : FindSpecsByInputTag())
 	{
 		const FGameplayTagContainer& GameplayTags = Spec.GetDynamicSpecSourceTags();
 		if (!GameplayTags.HasTagExact(InputGameplayTag))
@@ -197,9 +201,7 @@ void ATestCharacter::ReleaseAbilityInput(FGameplayTag InputGameplayTag)
 	}
 	// ループ中にアビリティの追加、削除が起きても配列が崩れないようにする。
 	FScopedAbilityListLock AbilityListLock(*AbilitySystemComponent);
-	
-	auto& SpecArray = AbilitySystemComponent->GetActivatableAbilities();
-	for (auto& Spec : SpecArray)
+	for (auto& Spec : FindSpecsByInputTag())
 	{
 		if (Spec.GetPrimaryInstance() == nullptr)
 		{
@@ -222,11 +224,11 @@ void ATestCharacter::ReleaseAbilityInput(FGameplayTag InputGameplayTag)
 	}
 }
 
-bool ATestCharacter::IsAbilityInputActive(FGameplayTag InputTag) const
+bool ATestCharacter::IsAbilityInputActive(FGameplayTag InputTag)
 {
-	for (const FGameplayAbilitySpec* Spec : FindSpecsByInputTag(InputTag))
+	for (FGameplayAbilitySpec& Spec : FindSpecsByInputTag())
 	{
-		if (Spec->IsActive())
+		if (Spec.IsActive())
 		{
 			return true;
 		}
