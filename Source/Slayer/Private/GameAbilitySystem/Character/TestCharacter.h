@@ -46,7 +46,7 @@ public:
 	 * 入力タグのGAが1つでも発動中なら true
 	 */
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem|Input")
-	bool IsAbilityInputActive(FGameplayTag InputTag);
+	bool IsAbilityInputActive(FGameplayTag InputGameplayTag) const;
 	
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "AbilitySystem")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
@@ -74,7 +74,7 @@ private:
 	/*
 	 * 
 	 */
-	TArray<FGameplayAbilitySpec>& FindSpecsByInputTag();
+	TArray<FGameplayAbilitySpec*> FindSpecsByInputTag(FGameplayTag InputGameplayTag) const;
 	void OnPressed(FGameplayTag InputGameplayTag);
 	void OnReleased(FGameplayTag InputGameplayTag);
 };

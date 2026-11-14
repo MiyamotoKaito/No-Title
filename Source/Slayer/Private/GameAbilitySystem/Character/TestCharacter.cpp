@@ -103,9 +103,22 @@ void ATestCharacter::PossessedBy(AController* NewController)
 	}
 }
 
-TArray<FGameplayAbilitySpec>& ATestCharacter::FindSpecsByInputTag()
+TArray<FGameplayAbilitySpec*> ATestCharacter::FindSpecsByInputTag(FGameplayTag InputGameplayTag) const
 {
-	return AbilitySystemComponent->GetActivatableAbilities();
+	TArray<FGameplayAbilitySpec*> Specs;
+	if (AbilitySystemComponent == nullptr || !InputGameplayTag.IsValid())
+	{
+		return Specs;
+	}
+	// タグが一致する Spec だけを集める
+	for (FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputGameplayTag))
+		{
+			Specs.Add(&Spec);
+		}
+	}
+	return Specs;
 }
 
 void ATestCharacter::OnPressed(FGameplayTag InputGameplayTag)
@@ -163,31 +176,26 @@ bool ATestCharacter::PressAbilityInput(FGameplayTag InputGameplayTag)
 	// ループ中にアビリティの追加、削除が起きても配列が崩れないようにする。
 	FScopedAbilityListLock AbilityListLock(*AbilitySystemComponent);
 	// 発動可能なアビリティの配列の参照を取得
-	for (auto& Spec : FindSpecsByInputTag())
+	for (auto Spec : FindSpecsByInputTag(InputGameplayTag))
 	{
-		const FGameplayTagContainer& GameplayTags = Spec.GetDynamicSpecSourceTags();
-		if (!GameplayTags.HasTagExact(InputGameplayTag))
-		{
-			continue;
-		}
 		bHandled = true;
-		if (Spec.IsActive())
+		if (Spec->IsActive())
 		{
-			AbilitySystemComponent->AbilitySpecInputPressed(Spec);
+			AbilitySystemComponent->AbilitySpecInputPressed(*Spec);
 			
-			if (Spec.GetPrimaryInstance() == nullptr)
+			if (Spec->GetPrimaryInstance() == nullptr)
 			{
 				continue;
 			}
 			
 			AbilitySystemComponent->InvokeReplicatedEvent(
 				EAbilityGenericReplicatedEvent::InputPressed,
-				Spec.Handle,
-				Spec.GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
+				Spec->Handle,
+				Spec->GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
 		}
 		else
 		{
-			AbilitySystemComponent->TryActivateAbility(Spec.Handle, true);
+			AbilitySystemComponent->TryActivateAbility(Spec->Handle, true);
 		}
 	}
 	return bHandled;
@@ -201,34 +209,28 @@ void ATestCharacter::ReleaseAbilityInput(FGameplayTag InputGameplayTag)
 	}
 	// ループ中にアビリティの追加、削除が起きても配列が崩れないようにする。
 	FScopedAbilityListLock AbilityListLock(*AbilitySystemComponent);
-	for (auto& Spec : FindSpecsByInputTag())
+	for (auto& Spec : FindSpecsByInputTag(InputGameplayTag))
 	{
-		if (Spec.GetPrimaryInstance() == nullptr)
+		if (Spec->GetPrimaryInstance() == nullptr)
 		{
 			continue;
 		}
-		
-		FGameplayTagContainer GameplayTags = Spec.GetDynamicSpecSourceTags();
-		if (!GameplayTags.HasTagExact(InputGameplayTag))
+		if (Spec->IsActive())
 		{
-			continue;
-		}
-		if (Spec.IsActive())
-		{
-			AbilitySystemComponent->AbilitySpecInputReleased(Spec);
+			AbilitySystemComponent->AbilitySpecInputReleased(*Spec);
 			AbilitySystemComponent->InvokeReplicatedEvent(
 				EAbilityGenericReplicatedEvent::InputReleased,
-				Spec.Handle,
-				Spec.GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
+				Spec->Handle,
+				Spec->GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
 		}
 	}
 }
 
-bool ATestCharacter::IsAbilityInputActive(FGameplayTag InputTag)
+bool ATestCharacter::IsAbilityInputActive(FGameplayTag InputGameplayTag) const
 {
-	for (FGameplayAbilitySpec& Spec : FindSpecsByInputTag())
+	for (auto Spec : FindSpecsByInputTag(InputGameplayTag))
 	{
-		if (Spec.IsActive())
+		if (Spec->IsActive())
 		{
 			return true;
 		}
