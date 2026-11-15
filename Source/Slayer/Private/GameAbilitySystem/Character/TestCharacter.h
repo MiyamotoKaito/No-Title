@@ -71,9 +71,6 @@ protected:
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "AbilitySystem")
 	TArray<FAbilityData> ConstructAbilities;
 private:
-	/*
-	 * 
-	 */
 	TArray<FGameplayAbilitySpec*> FindSpecsByInputTag(FGameplayTag InputGameplayTag) const;
 	void OnPressed(FGameplayTag InputGameplayTag);
 	void OnReleased(FGameplayTag InputGameplayTag);

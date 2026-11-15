@@ -176,7 +176,7 @@ bool ATestCharacter::PressAbilityInput(FGameplayTag InputGameplayTag)
 	// ループ中にアビリティの追加、削除が起きても配列が崩れないようにする。
 	FScopedAbilityListLock AbilityListLock(*AbilitySystemComponent);
 	// 発動可能なアビリティの配列の参照を取得
-	for (auto Spec : FindSpecsByInputTag(InputGameplayTag))
+	for (const auto& Spec : FindSpecsByInputTag(InputGameplayTag))
 	{
 		bHandled = true;
 		if (Spec->IsActive())
@@ -209,7 +209,7 @@ void ATestCharacter::ReleaseAbilityInput(FGameplayTag InputGameplayTag)
 	}
 	// ループ中にアビリティの追加、削除が起きても配列が崩れないようにする。
 	FScopedAbilityListLock AbilityListLock(*AbilitySystemComponent);
-	for (auto& Spec : FindSpecsByInputTag(InputGameplayTag))
+	for (const auto& Spec : FindSpecsByInputTag(InputGameplayTag))
 	{
 		if (Spec->GetPrimaryInstance() == nullptr)
 		{
@@ -228,7 +228,7 @@ void ATestCharacter::ReleaseAbilityInput(FGameplayTag InputGameplayTag)
 
 bool ATestCharacter::IsAbilityInputActive(FGameplayTag InputGameplayTag) const
 {
-	for (auto Spec : FindSpecsByInputTag(InputGameplayTag))
+	for (const auto& Spec : FindSpecsByInputTag(InputGameplayTag))
 	{
 		if (Spec->IsActive())
 		{
