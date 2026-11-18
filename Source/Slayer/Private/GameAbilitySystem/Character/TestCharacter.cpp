@@ -178,25 +178,24 @@ bool ATestCharacter::PressAbilityInput(FGameplayTag InputGameplayTag)
 	// 発動可能なアビリティの配列の参照を取得
 	for (const auto& Spec : FindSpecsByInputTag(InputGameplayTag))
 	{
+		if (!Spec->IsActive())
+		{
+			// 未発動:発動出来た時だけTrue
+			bHandled |= AbilitySystemComponent->TryActivateAbility(Spec->Handle);
+			continue;
+		}
+		
 		bHandled = true;
-		if (Spec->IsActive())
+		AbilitySystemComponent->AbilitySpecInputPressed(*Spec);
+		
+		if (Spec->GetPrimaryInstance() == nullptr)
 		{
-			AbilitySystemComponent->AbilitySpecInputPressed(*Spec);
-			
-			if (Spec->GetPrimaryInstance() == nullptr)
-			{
-				continue;
-			}
-			
-			AbilitySystemComponent->InvokeReplicatedEvent(
-				EAbilityGenericReplicatedEvent::InputPressed,
-				Spec->Handle,
-				Spec->GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
+			continue;
 		}
-		else
-		{
-			AbilitySystemComponent->TryActivateAbility(Spec->Handle, true);
-		}
+		AbilitySystemComponent->InvokeReplicatedEvent(
+		EAbilityGenericReplicatedEvent::InputPressed,
+		Spec->Handle,
+		Spec->GetPrimaryInstance()->GetCurrentActivationInfo().GetActivationPredictionKey());
 	}
 	return bHandled;
 }
