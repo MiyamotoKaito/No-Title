@@ -1,0 +1,77 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
+#include "GameAbilitySystem/MockAbilityData.h"
+#include "GameAbilitySystem/MockInputDataAsset.h"
+#include "GameFramework/Character.h"
+#include "Slayer/GameAbilitySystem/Attribute/MockBasicAttributeSet.h"
+#include "MockCharacter.generated.h"
+
+UCLASS()
+class SLAYER_API AMockCharacter : public ACharacter,public IAbilitySystemInterface
+{
+	GENERATED_BODY()
+
+public:
+	AMockCharacter();
+	virtual void Tick(float DeltaTime) override;
+	
+	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	
+	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
+	TArray<FGameplayAbilitySpecHandle> GrantAbilities(const TArray<FMockAbilityData>& GrantToAbilities); 
+	
+	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
+	void RemoveAbilities(TArray<FGameplayAbilitySpecHandle> AbilityHandlesToRemove);
+	
+	/*
+	 * 入力タグに対応するアビリティを外部から呼ぶ関数(AIController)
+	 *OnPressed
+	 */
+	UFUNCTION(BlueprintCallable, Category = "AbilitySystem|Input")
+	bool PressAbilityInput(FGameplayTag InputGameplayTag);
+	/*
+	 * 入力タグに対応するアビリティを外部から呼ぶ関数(AIController)
+	 *OnReleased
+	 */
+	UFUNCTION(BlueprintCallable, Category = "AbilitySystem|Input")
+	void ReleaseAbilityInput(FGameplayTag InputGameplayTag);
+	/*
+	 * 入力タグのGAが1つでも発動中なら true
+	 */
+	UFUNCTION(BlueprintCallable, Category = "AbilitySystem|Input")
+	bool IsAbilityInputActive(FGameplayTag InputGameplayTag) const;
+	
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "AbilitySystem")
+	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+	
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "AbilitySystem")
+	TObjectPtr<UMockBasicAttributeSet> BasicAttributeSet;
+protected:
+
+	virtual void BeginPlay() override;
+	/*
+	 * プレイヤーを操作するときに使う関数
+	 */
+	virtual void OnRep_PlayerState() override;
+	/*
+	 * 主に、敵がコントローラーに依存されている場合に使う関数
+	 */
+	virtual void PossessedBy(AController* NewController) override;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AbilitySystem")
+	EGameplayEffectReplicationMode ReplicationMode = EGameplayEffectReplicationMode:: Mixed;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "AbilitySystem|Input")
+	TObjectPtr<UMockInputDataAsset> InputDataAsset;
+	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "AbilitySystem")
+	TArray<FMockAbilityData> ConstructAbilities;
+private:
+	TArray<FGameplayAbilitySpec*> FindSpecsByInputTag(FGameplayTag InputGameplayTag) const;
+	void OnPressed(FGameplayTag InputGameplayTag);
+	void OnReleased(FGameplayTag InputGameplayTag);
+};
