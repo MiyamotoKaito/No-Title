@@ -80,3 +80,6 @@ Content/ParagonSevarog/
 Content/ParagonShinbi/
 Content/ParagonWraith/
 Content/SciFi_Beast06/
+
+# Fab（マーケットプレイス）から入れたプラグイン。リポジトリには含めない
+Plugins/Marketplace/
