@@ -92,6 +92,7 @@ public:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 	virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, OUT FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
 	bool IsUltimate() const { return bUltimate; }
 
@@ -103,6 +104,10 @@ protected:
 	// 必殺技の名前（撃った時に画面に出す）
 	UPROPERTY(EditDefaultsOnly, Category = "Ultimate")
 	FText UltimateName;
+
+	// プレイヤーが撃っている間は無敵にする（AI のボスが撃つ時は無敵にしない）
+	UPROPERTY(EditDefaultsOnly, Category = "Ultimate")
+	bool bInvulnerableWhilePlayerUltimate = true;
 
 	// 攻撃と同時に前へ踏み込む距離
 	UPROPERTY(EditDefaultsOnly, Category = "Attack")
@@ -121,6 +126,10 @@ protected:
 	TArray<FMockSlayerHitEvent> Hits;
 
 	virtual void OnAnimationEnded(bool bInterrupted) override;
+
+private:
+	// この発動で無敵タグを付けたか（終わる時に外す）
+	bool bAppliedInvulnerable = false;
 };
 
 /**

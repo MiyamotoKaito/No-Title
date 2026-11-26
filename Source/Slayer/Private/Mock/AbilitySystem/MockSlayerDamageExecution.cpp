@@ -44,6 +44,7 @@ void UMockSlayerDamageExecution::Execute_Implementation(const FGameplayEffectCus
 	// 無敵・死亡中の相手には当たらない
 	if (TargetASC->HasMatchingGameplayTag(SlayerTags::State_Invulnerable) || TargetASC->HasMatchingGameplayTag(SlayerTags::State_Dead))
 	{
+		UE_LOG(LogTemp, Verbose, TEXT("[Damage] %s は無敵・死亡中なので当たらない"), *GetNameSafe(TargetASC->GetAvatarActor()));
 		return;
 	}
 

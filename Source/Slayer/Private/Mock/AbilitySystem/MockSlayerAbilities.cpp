@@ -165,6 +165,17 @@ void UGA_MockSlayerMontageAttack::ActivateAbility(const FGameplayAbilitySpecHand
 
 	AMockBossCharacterBase* Character = GetSlayerCharacter();
 
+	// プレイヤーの必殺技は撃ち終わるまで無敵（ルーズタグは数で管理されるので slayer.God と重なっても壊れない）
+	if (bUltimate && bInvulnerableWhilePlayerUltimate && Character != nullptr && Character->IsPlayerControlled())
+	{
+		if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
+		{
+			ASC->AddLooseGameplayTag(SlayerTags::State_Invulnerable);
+			bAppliedInvulnerable = true;
+			UE_LOG(LogTemp, Log, TEXT("[Ultimate] %s 無敵 ON"), *GetNameSafe(Character));
+		}
+	}
+
 	// スキル・必殺技のセリフ
 	if (Character != nullptr)
 	{
@@ -225,6 +236,21 @@ void UGA_MockSlayerMontageAttack::ApplyCost(const FGameplayAbilitySpecHandle Han
 	{
 		ASC->SetNumericAttributeBase(UMockSlayerAttributeSet::GetUltimateChargeAttribute(), 0.f);
 	}
+}
+
+void UGA_MockSlayerMontageAttack::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+	// 必殺技で付けた無敵を外す（キャンセルされた時も）
+	if (bAppliedInvulnerable)
+	{
+		bAppliedInvulnerable = false;
+		if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
+		{
+			ASC->RemoveLooseGameplayTag(SlayerTags::State_Invulnerable);
+			UE_LOG(LogTemp, Log, TEXT("[Ultimate] %s 無敵 OFF (cancelled=%d)"), *GetNameSafe(ASC->GetAvatarActor()), bWasCancelled ? 1 : 0);
+		}
+	}
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void UGA_MockSlayerMontageAttack::OnAnimationEnded(bool bInterrupted)
