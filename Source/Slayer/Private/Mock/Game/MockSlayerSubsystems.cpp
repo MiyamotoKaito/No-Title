@@ -1,6 +1,6 @@
-#include "Game/MockSlayerSubsystems.h"
+#include "Mock/Game/MockSlayerSubsystems.h"
 
-#include "Data/MockBossDefinition.h"
+#include "Mock/Data/MockBossDefinition.h"
 
 bool UMockProgressSubsystem::AddCapturedBoss(UMockBossDefinition* Boss, int32 StartLevel)
 {

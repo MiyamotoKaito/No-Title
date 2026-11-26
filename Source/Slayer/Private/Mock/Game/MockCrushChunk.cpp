@@ -1,7 +1,7 @@
-#include "Game/MockCrushChunk.h"
+#include "Mock/Game/MockCrushChunk.h"
 
 #include "AbilitySystemComponent.h"
-#include "AbilitySystem/MockSlayerAttributeSet.h"
+#include "Mock/AbilitySystem/MockSlayerAttributeSet.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"

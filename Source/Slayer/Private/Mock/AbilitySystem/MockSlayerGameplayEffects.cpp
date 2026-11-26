@@ -1,6 +1,6 @@
-#include "AbilitySystem/MockSlayerGameplayEffects.h"
+#include "Mock/AbilitySystem/MockSlayerGameplayEffects.h"
 
-#include "AbilitySystem/MockSlayerDamageExecution.h"
+#include "Mock/AbilitySystem/MockSlayerDamageExecution.h"
 #include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 #include "SlayerGameplayTags.h"
 

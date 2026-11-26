@@ -5,10 +5,10 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
-#include "GameAbilitySystem/MockAbilityData.h"
-#include "GameAbilitySystem/MockInputDataAsset.h"
+#include "Mock/GameAbilitySystem/MockAbilityData.h"
+#include "Mock/GameAbilitySystem/MockInputDataAsset.h"
 #include "GameFramework/Character.h"
-#include "Slayer/GameAbilitySystem/Attribute/MockBasicAttributeSet.h"
+#include "Mock/AbilitySystem/MockSlayerAttributeSet.h"
 #include "MockCharacter.generated.h"
 
 UCLASS()
@@ -52,7 +52,7 @@ public:
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 	
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "AbilitySystem")
-	TObjectPtr<UMockBasicAttributeSet> BasicAttributeSet;
+	TObjectPtr<UMockSlayerAttributeSet> BasicAttributeSet;
 protected:
 
 	virtual void BeginPlay() override;

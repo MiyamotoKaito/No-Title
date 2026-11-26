@@ -1,9 +1,9 @@
-#include "AI/MockSlayerBossAIController.h"
+#include "Mock/AI/MockSlayerBossAIController.h"
 
-#include "Character/MockBossCharacterBase.h"
-#include "Data/MockBossDefinition.h"
+#include "Mock/Character/MockBossCharacterBase.h"
+#include "Mock/Data/MockBossDefinition.h"
 #include "Engine/World.h"
-#include "Game/MockBattleGameState.h"
+#include "Mock/Game/MockBattleGameState.h"
 #include "TimerManager.h"
 
 AMockSlayerBossAIController::AMockSlayerBossAIController()

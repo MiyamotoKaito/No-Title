@@ -17,7 +17,7 @@ AMockCharacter::AMockCharacter()
 	// 共有するタイプ
 	AbilitySystemComponent->SetReplicationMode(ReplicationMode);
 	// 属性セットをサブオブジェクトとして生成
-	BasicAttributeSet = CreateDefaultSubobject<UMockBasicAttributeSet>(TEXT("BasicSubObjectSet"));
+	BasicAttributeSet = CreateDefaultSubobject<UMockSlayerAttributeSet>(TEXT("BasicSubObjectSet"));
 }
 
 // Called when the game starts or when spawned

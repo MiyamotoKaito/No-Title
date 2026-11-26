@@ -1,4 +1,4 @@
-#include "Data/MockSlayerDataLibrary.h"
+#include "Mock/Data/MockSlayerDataLibrary.h"
 
 #include "DataAssets/ComposableCameraTypeAsset.h"
 #include "Nodes/ComposableCameraCameraNodeBase.h"

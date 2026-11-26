@@ -1,7 +1,7 @@
-#include "Game/MockBattleGameState.h"
+#include "Mock/Game/MockBattleGameState.h"
 
-#include "Character/MockBossCharacterBase.h"
-#include "Game/MockCrushChunk.h"
+#include "Mock/Character/MockBossCharacterBase.h"
+#include "Mock/Game/MockCrushChunk.h"
 #include "Net/UnrealNetwork.h"
 
 void AMockBattleGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
