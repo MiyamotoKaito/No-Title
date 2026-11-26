@@ -13,6 +13,84 @@ class UAnimSequenceBase;
 class UGameplayAbility;
 class UParticleSystem;
 class USkeletalMesh;
+class USoundBase;
+
+/**
+ * キャラのボイス（SoundCue を入れると、毎回ランダムな言い回しになる）
+ * null のものは鳴らさない
+ */
+USTRUCT(BlueprintType)
+struct SLAYER_API FMockSlayerVoiceSet
+{
+	GENERATED_BODY()
+
+	// 登場（ボスとして出てきた時）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> IntroBoast;
+
+	// 登場したボスへの返し（プレイヤーとして戦う時）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> IntroResponse;
+
+	// コンボの掛け声（毎段ではなく確率で）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> AttackEffort;
+
+	// コンボ開始時のセリフ（確率で）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> AttackLine;
+
+	// スキルのセリフ
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> SkillLine;
+
+	// 必殺技のセリフ
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> UltimateLine;
+
+	// 必殺技ゲージが満タンになった時（プレイヤー操作時）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> UltimateReady;
+
+	// 回避
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> DodgeEffort;
+
+	// 被弾（小・大）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> Pain;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> PainHeavy;
+
+	// ブレイクした時
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> Break;
+
+	// 体力が少なくなった時（1回だけ）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> HealthLow;
+
+	// 倒れる時
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> Death;
+
+	// 相手を倒した時
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> Kill;
+
+	// 獲得されて仲間になる時
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> Catchphrase;
+
+	// 進化した時
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> LevelUp;
+
+	// 勝った時
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	TObjectPtr<USoundBase> Victory;
+};
 
 /**
  * 付与するアビリティと、それを発動する入力タグの組
@@ -105,12 +183,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Display")
 	FText DisplayName;
 
+	// 操作キャラとして使えるようになるレベル（操作キャラの誰かがこのレベルに達したら解放）。1 なら最初から
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Display", meta = (ClampMin = "1"))
+	int32 UnlockLevel = 1;
+
 	// ---- 見た目 ----
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	TObjectPtr<USkeletalMesh> Mesh;
 
+	// AnimBP。空なら下の移動アニメを速さで切り替える簡易アニメ（UMockSlayerSimpleAnimInstance）を使う
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	TSubclassOf<UAnimInstance> AnimClass;
+
+	// ---- AnimBP が無いキャラ用の移動アニメ ----
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Locomotion")
+	TObjectPtr<UAnimSequenceBase> IdleAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Locomotion")
+	TObjectPtr<UAnimSequenceBase> WalkAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Locomotion")
+	TObjectPtr<UAnimSequenceBase> RunAnimation;
+
+	// 歩き・走りのアニメがちょうど合う移動速度（等倍の時）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Locomotion")
+	float WalkAnimationSpeed = 200.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Locomotion")
+	float RunAnimationSpeed = 600.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	FVector MeshLocation = FVector(0.f, 0.f, -96.f);
@@ -123,6 +223,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	float CapsuleHalfHeight = 96.f;
+
+	// 体の大きさ（アクター全体の倍率）。技の当たり判定・踏み込み・エフェクトもこの倍率で大きくなる
+	// 技の数値（Offset・Radius など）は等倍の時の値で書く
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual", meta = (ClampMin = "0.1"))
+	float BodyScale = 1.f;
 
 	// ---- アニメーション ----
 	// 登場演出（Intro フェーズで再生）。このモンタージュのスロット名を、他のアニメを動的モンタージュにする時にも使う
@@ -159,6 +264,10 @@ public:
 	// 必殺技の溜めで体に出す
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effects")
 	TObjectPtr<UParticleSystem> UltimateWarmupEffect;
+
+	// ---- ボイス ----
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voice")
+	FMockSlayerVoiceSet Voices;
 
 	// ---- レベル ----
 	// ボスとして出てくる時のレベル（推奨レベル）。獲得するとこのレベルで仲間になる

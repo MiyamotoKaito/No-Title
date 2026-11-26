@@ -4,7 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "AbilitySystem/MockSlayerGameplayAbility.h"
+#include "Mock/AbilitySystem/MockSlayerGameplayAbility.h"
 #include "MockSlayerAbilities.generated.h"
 
 class UAnimSequenceBase;

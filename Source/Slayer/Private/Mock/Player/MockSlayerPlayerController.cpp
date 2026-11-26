@@ -1,21 +1,28 @@
-#include "Player/MockSlayerPlayerController.h"
+#include "Mock/Player/MockSlayerPlayerController.h"
 
 #include "AbilitySystemComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Mock/AbilitySystem/MockSlayerAttributeSet.h"
+#include "Mock/Data/MockBossDefinition.h"
+#include "TimerManager.h"
 #include "Cameras/ComposableCameraCameraBase.h"
-#include "Character/MockBossCharacterBase.h"
+#include "Mock/Character/MockBossCharacterBase.h"
 #include "Core/ComposableCameraParameterBlock.h"
 #include "Core/ComposableCameraPlayerCameraManager.h"
 #include "DataAssets/ComposableCameraTransitionDataAsset.h"
 #include "DataAssets/ComposableCameraTypeAsset.h"
-#include "Game/MockCrushChunk.h"
+#include "Mock/Game/MockCrushChunk.h"
 #include "UObject/ConstructorHelpers.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
-#include "Game/MockBattleGameMode.h"
-#include "Game/MockBattleGameState.h"
-#include "Game/MockSlayerSubsystems.h"
+#include "Mock/Game/MockBattleGameMode.h"
+#include "Mock/Game/MockBattleGameState.h"
+#include "Mock/Game/MockSlayerSubsystems.h"
 #include "Engine/GameInstance.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
@@ -27,6 +34,7 @@ namespace
 	// 開発用：コンソールで変更できる
 	TAutoConsoleVariable<int32> CVarSlayerAutoPlay(TEXT("slayer.AutoPlay"), 0, TEXT("1 でプレイヤー側も自動で戦う（ループの動作確認用）"));
 	TAutoConsoleVariable<int32> CVarSlayerGod(TEXT("slayer.God"), 0, TEXT("1 でプレイヤーを無敵にする"));
+	TAutoConsoleVariable<int32> CVarSlayerChangeFull(TEXT("slayer.ChangeFull"), 0, TEXT("1 で変身ゲージを常に満タンにする"));
 
 	UInputAction* MakeAction(UObject* Outer, const TCHAR* Name, EInputActionValueType ValueType)
 	{
@@ -64,6 +72,12 @@ AMockSlayerPlayerController::AMockSlayerPlayerController()
 	static ConstructorHelpers::FObjectFinder<UComposableCameraTransitionDataAsset> SwitchTransitionAsset(TEXT("/ComposableCameraSystem/CameraPresets/Preset_Transitions/CameraTransaition_Cylindrical_OneSecond.CameraTransaition_Cylindrical_OneSecond"));
 	FreeCamera = FreeCameraAsset.Object;
 	LockOnCamera = LockOnCameraAsset.Object;
+
+	// 体の大きいキャラ用（引きを大きくしたもの）
+	static ConstructorHelpers::FObjectFinder<UComposableCameraTypeAsset> FreeCameraLargeAsset(TEXT("/Game/Slayer/Camera/CAM_MockSlayer_FreeLarge.CAM_MockSlayer_FreeLarge"));
+	static ConstructorHelpers::FObjectFinder<UComposableCameraTypeAsset> LockOnCameraLargeAsset(TEXT("/Game/Slayer/Camera/CAM_MockSlayer_LockOnLarge.CAM_MockSlayer_LockOnLarge"));
+	FreeCameraLarge = FreeCameraLargeAsset.Object;
+	LockOnCameraLarge = LockOnCameraLargeAsset.Object;
 	TargetSwitchTransition = SwitchTransitionAsset.Object;
 
 	// 視点操作の入力アクション。カメラ（ControlRotate ノード）もこれを読むので、アセットで共有する
@@ -123,18 +137,24 @@ void AMockSlayerPlayerController::ActivateCameraFor(AActor* Target)
 		return;
 	}
 
+	// 体の大きいキャラを操作している時は、引きの大きいカメラにする
+	const AMockBossCharacterBase* SlayerPawn = GetSlayerPawn();
+	const bool bLarge = SlayerPawn != nullptr && SlayerPawn->GetBodyScale() >= LargeBodyScale;
+	UComposableCameraTypeAsset* Free = (bLarge && FreeCameraLarge != nullptr) ? FreeCameraLarge.Get() : FreeCamera.Get();
+	UComposableCameraTypeAsset* LockOn = (bLarge && LockOnCameraLarge != nullptr) ? LockOnCameraLarge.Get() : LockOnCamera.Get();
+
 	// 最初は必ず自由カメラから始める
 	// （ロックオンカメラは距離を持たず、直前のカメラの位置を引き継ぐ作りなので）
-	if (!bCameraActivated && FreeCamera != nullptr)
+	if (!bCameraActivated && Free != nullptr)
 	{
-		CameraManager->ActivateNewCameraFromTypeAsset(FreeCamera, nullptr, FComposableCameraActivateParams(), FComposableCameraParameterBlock());
+		CameraManager->ActivateNewCameraFromTypeAsset(Free, nullptr, FComposableCameraActivateParams(), FComposableCameraParameterBlock());
 		bCameraActivated = true;
 		CameraTarget = nullptr;
 		// ロックオンは次のフレームで（自由カメラの位置が一度計算されてから引き継ぐ）
 		return;
 	}
 
-	UComposableCameraTypeAsset* CameraAsset = (Target != nullptr && LockOnCamera != nullptr) ? LockOnCamera.Get() : FreeCamera.Get();
+	UComposableCameraTypeAsset* CameraAsset = (Target != nullptr && LockOn != nullptr) ? LockOn : Free;
 	if (CameraAsset == nullptr)
 	{
 		return;
@@ -165,12 +185,30 @@ void AMockSlayerPlayerController::OnPossess(APawn* InPawn)
 
 	// キャラを乗り換えた時に IMC を入れ直す（キャラ別の IMC を作った時はここで差し替える）
 	AddMappingContext();
+
+	// カメラは新しいポーンで付け直す（体の大きさでカメラが変わるため）
+	bCameraActivated = false;
+	CameraTarget = nullptr;
+	// 無敵（開発用）も新しいポーンに付け直す
+	bGodApplied = false;
+
+	// 与えたダメージで変身ゲージを溜める
+	if (AMockBossCharacterBase* PreviousPawn = DamageBoundPawn.Get())
+	{
+		PreviousPawn->OnDamageDealt.Remove(DamageDealtHandle);
+	}
+	DamageBoundPawn = Cast<AMockBossCharacterBase>(InPawn);
+	if (AMockBossCharacterBase* NewPawn = DamageBoundPawn.Get())
+	{
+		DamageDealtHandle = NewPawn->OnDamageDealt.AddUObject(this, &AMockSlayerPlayerController::OnPawnDealtDamage);
+	}
 }
 
 void AMockSlayerPlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
 
+	UpdateBossChange(DeltaTime);
 	UpdateCamera();
 	UpdateDebugCheats(DeltaTime);
 
@@ -186,18 +224,10 @@ void AMockSlayerPlayerController::PlayerTick(float DeltaTime)
 	}
 
 	const TArray<UMockBossDefinition*> Characters = GameMode->GetSelectableCharacters();
-	const UMockBattleSessionSubsystem* Session = GetGameInstance()->GetSubsystem<UMockBattleSessionSubsystem>();
 	const AMockBossCharacterBase* SlayerPawn = GetSlayerPawn();
 
-	UMockBossDefinition* Preferred = nullptr;
-	if (Session != nullptr && Session->LastResult.bCaptured)
-	{
-		Preferred = Session->LastResult.Boss;
-	}
-	else if (SlayerPawn != nullptr)
-	{
-		Preferred = SlayerPawn->GetDefinition();
-	}
+	// 今の操作キャラを選んだ状態から始める
+	UMockBossDefinition* Preferred = SlayerPawn ? SlayerPawn->GetDefinition() : nullptr;
 
 	SelectedCharacterIndex = FMath::Max(Characters.IndexOfByKey(Preferred), 0);
 	bSelectionInitialized = true;
@@ -270,6 +300,16 @@ void AMockSlayerPlayerController::UpdateDebugCheats(float DeltaTime)
 		return;
 	}
 	AutoPlayTimer = 0.3f;
+	// 変身できるなら変身する（どれになるかはランダム）
+	if (IsChangeReady() && !IsBossChanged())
+	{
+		const int32 Count = GetChangeCandidates().Num();
+		if (Count > 0)
+		{
+			TryBossChange(FMath::RandRange(0, Count - 1));
+			return;
+		}
+	}
 	// スキル・必殺技はコンボの途中でも押す（コンボを中断して出る）
 	if (SlayerPawn->PressAbilityInput(SlayerTags::Input_Skill2) || SlayerPawn->PressAbilityInput(SlayerTags::Input_Skill1))
 	{
@@ -299,6 +339,7 @@ void AMockSlayerPlayerController::CreateDefaultInput()
 	// 視点操作はカメラ（ControlRotate ノード）が読むので、同じアセットを使う（無ければ作る）
 	LookAction = LookActionTemplate != nullptr ? LookActionTemplate.Get() : MakeAction(this, TEXT("IA_Look"), EInputActionValueType::Axis2D);
 	LockOnAction = MakeAction(this, TEXT("IA_LockOn"), EInputActionValueType::Boolean);
+	ChangeAction = MakeAction(this, TEXT("IA_BossChange"), EInputActionValueType::Boolean);
 	ConfirmAction = MakeAction(this, TEXT("IA_Confirm"), EInputActionValueType::Boolean);
 	SelectPrevAction = MakeAction(this, TEXT("IA_SelectPrev"), EInputActionValueType::Boolean);
 	SelectNextAction = MakeAction(this, TEXT("IA_SelectNext"), EInputActionValueType::Boolean);
@@ -341,6 +382,10 @@ void AMockSlayerPlayerController::CreateDefaultInput()
 	IMC->MapKey(LockOnAction, EKeys::Tab);
 	IMC->MapKey(LockOnAction, EKeys::MiddleMouseButton);
 	IMC->MapKey(LockOnAction, EKeys::Gamepad_RightThumbstick);
+
+	// ボスチェンジ（数字キーは変身先の指定。リザルトではキャラ選択）
+	IMC->MapKey(ChangeAction, EKeys::F);
+	IMC->MapKey(ChangeAction, EKeys::Gamepad_LeftShoulder);
 
 	// 技
 	IMC->MapKey(AbilityActions[SlayerTags::Input_Attack], EKeys::LeftMouseButton);
@@ -395,6 +440,7 @@ void AMockSlayerPlayerController::SetupInputComponent()
 	Input->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AMockSlayerPlayerController::OnMove);
 	// 視点操作はカメラ（Composable Camera の ControlRotate ノード）がポーン側で直接読むので、ここでは束ねない
 	Input->BindAction(LockOnAction, ETriggerEvent::Started, this, &AMockSlayerPlayerController::OnToggleLockOn);
+	Input->BindAction(ChangeAction, ETriggerEvent::Started, this, &AMockSlayerPlayerController::OnChangePressed);
 
 	for (const TPair<FGameplayTag, TObjectPtr<UInputAction>>& Pair : AbilityActions)
 	{
@@ -466,8 +512,15 @@ bool AMockSlayerPlayerController::IsInResult() const
 
 void AMockSlayerPlayerController::OnChooseCharacter(int32 Index)
 {
+	// バトル中の数字キーは変身先の指定
+	if (!IsInResult())
+	{
+		TryBossChange(Index);
+		return;
+	}
+
 	const AMockBattleGameMode* GameMode = GetWorld()->GetAuthGameMode<AMockBattleGameMode>();
-	if (!IsInResult() || GameMode == nullptr)
+	if (GameMode == nullptr)
 	{
 		return;
 	}
@@ -505,4 +558,305 @@ void AMockSlayerPlayerController::OnConfirm()
 	const TArray<UMockBossDefinition*> Characters = GameMode->GetSelectableCharacters();
 	UMockBossDefinition* Choice = Characters.IsValidIndex(SelectedCharacterIndex) ? Characters[SelectedCharacterIndex] : nullptr;
 	GameMode->RequestNextBattle(Choice);
+}
+
+// ---------------------------------------------------------------------
+// ボスチェンジ（変身）
+// ---------------------------------------------------------------------
+
+float AMockSlayerPlayerController::GetChangeChargePercent() const
+{
+	return MaxChangeCharge > 0.f ? FMath::Clamp(ChangeCharge / MaxChangeCharge, 0.f, 1.f) : 0.f;
+}
+
+bool AMockSlayerPlayerController::IsChangeReady() const
+{
+	return !IsBossChanged() && ChangeCharge >= MaxChangeCharge;
+}
+
+float AMockSlayerPlayerController::GetChangeRemainingPercent() const
+{
+	return (IsBossChanged() && ChangeDuration > 0.f) ? FMath::Clamp(ChangeRemaining / ChangeDuration, 0.f, 1.f) : 0.f;
+}
+
+TArray<UMockBossDefinition*> AMockSlayerPlayerController::GetChangeCandidates() const
+{
+	TArray<UMockBossDefinition*> Result;
+	const UMockProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UMockProgressSubsystem>() : nullptr;
+	if (Progress == nullptr)
+	{
+		return Result;
+	}
+
+	// もとのキャラ（変身中なら眠っている方）には変身しない
+	const AMockBossCharacterBase* Base = IsBossChanged() ? BasePawn.Get() : GetSlayerPawn();
+	const UMockBossDefinition* BaseDefinition = Base ? Base->GetDefinition() : nullptr;
+	for (const TObjectPtr<UMockBossDefinition>& Boss : Progress->GetCapturedBosses())
+	{
+		if (Boss != nullptr && Boss.Get() != BaseDefinition)
+		{
+			Result.Add(Boss);
+		}
+	}
+	return Result;
+}
+
+bool AMockSlayerPlayerController::GetChangeBanner(FText& OutName, int32& OutLevel, float& OutAge) const
+{
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return false;
+	}
+	OutAge = static_cast<float>(World->GetRealTimeSeconds() - ChangeBannerStartRealTime);
+	if (OutAge < 0.f || OutAge > ChangeBannerDuration)
+	{
+		return false;
+	}
+	OutName = ChangeBannerName;
+	OutLevel = ChangeBannerLevel;
+	return true;
+}
+
+void AMockSlayerPlayerController::OnChangePressed()
+{
+	// 変身中に押すと元に戻る。変身していなければ1番目のキャラに変身
+	if (IsBossChanged())
+	{
+		if (IsGameplayInputAllowed())
+		{
+			EndBossChange(true);
+		}
+		return;
+	}
+	TryBossChange(0);
+}
+
+void AMockSlayerPlayerController::TryBossChange(int32 CandidateIndex)
+{
+	if (!IsGameplayInputAllowed() || !IsChangeReady())
+	{
+		return;
+	}
+	const AMockBossCharacterBase* Current = GetSlayerPawn();
+	if (Current == nullptr || Current->IsDead())
+	{
+		return;
+	}
+	const TArray<UMockBossDefinition*> Candidates = GetChangeCandidates();
+	if (!Candidates.IsValidIndex(CandidateIndex))
+	{
+		return;
+	}
+	BeginBossChange(Candidates[CandidateIndex]);
+}
+
+void AMockSlayerPlayerController::BeginBossChange(UMockBossDefinition* Target)
+{
+	AMockBossCharacterBase* Base = GetSlayerPawn();
+	UWorld* World = GetWorld();
+	if (Base == nullptr || Target == nullptr || World == nullptr)
+	{
+		return;
+	}
+
+	// 変身した姿を、今いる場所に出す（体が大きいほど足元が埋まらないように上げる）
+	const float NewHalfHeight = Target->CapsuleHalfHeight * FMath::Max(Target->BodyScale, 0.1f);
+	const float OldHalfHeight = Base->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector Location = Base->GetActorLocation() + FVector(0.f, 0.f, NewHalfHeight - OldHalfHeight + 5.f);
+	const FTransform SpawnTransform(FRotator(0.f, Base->GetActorRotation().Yaw, 0.f), Location);
+
+	AMockBossCharacterBase* NewPawn = World->SpawnActorDeferred<AMockBossCharacterBase>(AMockBossCharacterBase::StaticClass(), SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+	if (NewPawn == nullptr)
+	{
+		return;
+	}
+	NewPawn->SetDefinition(Target);
+	// 獲得したボスは、そのボスとして育てたレベルで出てくる
+	const UMockProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UMockProgressSubsystem>();
+	NewPawn->SetCharacterLevel(Progress ? Progress->GetLevel(Target) : Target->BossLevel);
+	UGameplayStatics::FinishSpawningActor(NewPawn, SpawnTransform);
+
+	// もとのキャラの体力と必殺技ゲージを覚えておき、眠らせる
+	if (const UMockSlayerAttributeSet* BaseAttributes = Base->GetAttributeSet())
+	{
+		SavedBaseHealth = BaseAttributes->GetHealth();
+		SavedBaseUltimate = BaseAttributes->GetUltimateCharge();
+	}
+	Base->SetDormant(true);
+	BasePawn = Base;
+
+	// ポーンごと乗り換える（Possess で ASC の初期化・技の付与・ステータスの設定が行われる）
+	Possess(NewPawn);
+	ChangedPawn = NewPawn;
+	NewPawn->OnDied.AddUObject(this, &AMockSlayerPlayerController::OnChangedPawnDied);
+	UsedChangeForms.AddUnique(Target);
+
+	// 変身した直後から、そのボスの必殺技を撃てる（自分を苦しめた技をすぐ使える）
+	if (UAbilitySystemComponent* ASC = NewPawn->GetAbilitySystemComponent())
+	{
+		ASC->SetNumericAttributeBase(UMockSlayerAttributeSet::GetUltimateChargeAttribute(), NewPawn->GetAttributeSet()->GetMaxUltimateCharge());
+	}
+
+	ChangeCharge = 0.f;
+	ChangeRemaining = ChangeDuration;
+
+	// ---- 演出 ----
+	// 時間をほぼ止めて、変身した姿と名乗りを見せる
+	NewPawn->StartSlowMotion(0.12f, 1.2f);
+	NewPawn->SpawnEffectAttached(Target->UltimateWarmupEffect, NAME_None, 1.5f);
+	NewPawn->SpawnEffectAtLocation(Target->ImpactEffect, NewPawn->GetActorLocation() - FVector(0.f, 0.f, NewHalfHeight * 0.8f), FRotator::ZeroRotator, 3.f * NewPawn->GetBodyScale());
+	if (const FMockSlayerVoiceSet* Voices = NewPawn->GetVoices())
+	{
+		NewPawn->PlayVoice(Voices->IntroBoast, AMockBossCharacterBase::EVoicePriority::Important);
+	}
+
+	// 登場モーションで構える。長すぎるので途中で止めて操作に戻す
+	NewPawn->PlayIntro();
+	TWeakObjectPtr<AMockBossCharacterBase> WeakPawn = NewPawn;
+	GetWorldTimerManager().SetTimer(ChangeIntroStopTimer, FTimerDelegate::CreateWeakLambda(this, [WeakPawn]()
+	{
+		AMockBossCharacterBase* Pawn = WeakPawn.Get();
+		UAnimInstance* AnimInstance = (Pawn && Pawn->GetMesh()) ? Pawn->GetMesh()->GetAnimInstance() : nullptr;
+		const UMockBossDefinition* Definition = Pawn ? Pawn->GetDefinition() : nullptr;
+		if (AnimInstance != nullptr && Definition != nullptr && Definition->IntroMontage != nullptr)
+		{
+			AnimInstance->Montage_Stop(0.25f, Definition->IntroMontage);
+		}
+	}), 0.9f, false);
+
+	PlayChangeShockwave(NewPawn);
+
+	ChangeBannerName = NewPawn->GetFormName();
+	ChangeBannerLevel = NewPawn->GetCharacterLevel();
+	ChangeBannerStartRealTime = World->GetRealTimeSeconds();
+
+	UE_LOG(LogTemp, Log, TEXT("[BossChange] %s -> %s (Lv.%d)"), *GetNameSafe(Base->GetDefinition()), *GetNameSafe(Target), NewPawn->GetCharacterLevel());
+}
+
+void AMockSlayerPlayerController::PlayChangeShockwave(AMockBossCharacterBase* Center)
+{
+	const AMockBattleGameState* State = GetWorld()->GetGameState<AMockBattleGameState>();
+	AMockBossCharacterBase* Enemy = State ? State->Boss.Get() : nullptr;
+	if (Center == nullptr || Enemy == nullptr || Enemy->IsDead())
+	{
+		return;
+	}
+
+	// 変身の衝撃で、近くにいるボスを吹き飛ばす（大きい体ほど遠くまで届く）
+	FVector Away = Enemy->GetActorLocation() - Center->GetActorLocation();
+	Away.Z = 0.f;
+	const float Radius = ChangeShockwaveRadius * Center->GetBodyScale() + Enemy->GetCapsuleComponent()->GetScaledCapsuleRadius();
+	if (Away.Size() > Radius)
+	{
+		return;
+	}
+	Away = Away.GetSafeNormal(UE_SMALL_NUMBER, Center->GetActorForwardVector());
+	Enemy->LaunchCharacter(Away * ChangeShockwaveStrength + FVector(0.f, 0.f, 350.f), true, true);
+}
+
+void AMockSlayerPlayerController::EndBossChange(bool bWithEffect)
+{
+	AMockBossCharacterBase* Changed = ChangedPawn;
+	AMockBossCharacterBase* Base = BasePawn;
+	GetWorldTimerManager().ClearTimer(ChangeRevertTimer);
+	GetWorldTimerManager().ClearTimer(ChangeIntroStopTimer);
+	ChangedPawn = nullptr;
+	BasePawn = nullptr;
+	ChangeRemaining = 0.f;
+	if (Changed == nullptr || Base == nullptr)
+	{
+		return;
+	}
+
+	// 変身していた場所に、もとのキャラを戻す
+	const float BaseHalfHeight = Base->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const float ChangedHalfHeight = Changed->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector Location = Changed->GetActorLocation() - FVector(0.f, 0.f, ChangedHalfHeight - BaseHalfHeight);
+	Base->SetActorLocationAndRotation(Location, FRotator(0.f, Changed->GetActorRotation().Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+	Base->SetDormant(false);
+
+	Changed->OnDied.RemoveAll(this);
+	Possess(Base);
+
+	// Possess でステータスが初期化されるので、変身前の体力と必殺技ゲージに戻す
+	if (UAbilitySystemComponent* ASC = Base->GetAbilitySystemComponent())
+	{
+		ASC->SetNumericAttributeBase(UMockSlayerAttributeSet::GetHealthAttribute(), FMath::Max(SavedBaseHealth, 1.f));
+		ASC->SetNumericAttributeBase(UMockSlayerAttributeSet::GetUltimateChargeAttribute(), SavedBaseUltimate);
+	}
+
+	if (bWithEffect && Base->GetDefinition() != nullptr)
+	{
+		Base->SpawnEffectAttached(Base->GetDefinition()->UltimateWarmupEffect, NAME_None, 1.2f);
+		if (Changed->GetDefinition() != nullptr)
+		{
+			Changed->SpawnEffectAtLocation(Changed->GetDefinition()->ImpactEffect, Changed->GetActorLocation(), FRotator::ZeroRotator, 2.f * Changed->GetBodyScale());
+		}
+	}
+	Changed->Destroy();
+
+	UE_LOG(LogTemp, Log, TEXT("[BossChange] 解除 -> %s"), *GetNameSafe(Base->GetDefinition()));
+}
+
+void AMockSlayerPlayerController::OnChangedPawnDied(AMockBossCharacterBase* DeadPawn)
+{
+	// 変身した姿が倒れても負けではない。少し倒れる姿を見せてから元のキャラに戻る
+	if (DeadPawn == nullptr || DeadPawn != ChangedPawn)
+	{
+		return;
+	}
+	GetWorldTimerManager().SetTimer(ChangeRevertTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		EndBossChange(true);
+	}), 0.8f, false);
+}
+
+void AMockSlayerPlayerController::OnPawnDealtDamage(AMockBossCharacterBase* Source, float Damage)
+{
+	// 変身中は溜まらない
+	if (IsBossChanged() || Damage <= 0.f)
+	{
+		return;
+	}
+	const AMockBattleGameState* State = GetWorld()->GetGameState<AMockBattleGameState>();
+	const AMockBossCharacterBase* Boss = State ? State->Boss.Get() : nullptr;
+	const UMockSlayerAttributeSet* BossAttributes = Boss ? Boss->GetAttributeSet() : nullptr;
+	if (BossAttributes == nullptr || BossAttributes->GetMaxHealth() <= 0.f || ChangeFullDamageRatio <= 0.f)
+	{
+		return;
+	}
+	const float Ratio = Damage / (BossAttributes->GetMaxHealth() * ChangeFullDamageRatio);
+	ChangeCharge = FMath::Min(ChangeCharge + Ratio * MaxChangeCharge, MaxChangeCharge);
+}
+
+void AMockSlayerPlayerController::UpdateBossChange(float DeltaTime)
+{
+	const AMockBattleGameState* State = GetWorld()->GetGameState<AMockBattleGameState>();
+	const EMockBattlePhase Phase = State ? State->GetPhase() : EMockBattlePhase::Battle;
+
+	if (IsBossChanged())
+	{
+		// 変身していられる時間が尽きたら戻る（倒れて戻る途中なら任せる）
+		if (ChangedPawn->IsDead())
+		{
+			return;
+		}
+		ChangeRemaining -= DeltaTime;
+		if (ChangeRemaining <= 0.f)
+		{
+			EndBossChange(true);
+		}
+		return;
+	}
+
+	if (CVarSlayerChangeFull.GetValueOnGameThread() > 0)
+	{
+		ChangeCharge = MaxChangeCharge;
+		return;
+	}
+	if (Phase == EMockBattlePhase::Battle)
+	{
+		ChangeCharge = FMath::Min(ChangeCharge + ChangeChargePerSecond * DeltaTime, MaxChangeCharge);
+	}
 }

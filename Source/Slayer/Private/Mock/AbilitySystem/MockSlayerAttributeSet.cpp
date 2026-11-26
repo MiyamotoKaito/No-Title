@@ -1,7 +1,8 @@
-#include "AbilitySystem/MockSlayerAttributeSet.h"
+#include "Mock/AbilitySystem/MockSlayerAttributeSet.h"
 
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
+#include "Mock/Character/MockBossCharacterBase.h"
 #include "SlayerGameplayTags.h"
 
 UMockSlayerAttributeSet::UMockSlayerAttributeSet()
@@ -90,11 +91,27 @@ void UMockSlayerAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 		const float NewHealth = FMath::Clamp(GetHealth() - Damage, 0.f, GetMaxHealth());
 		SetHealth(NewHealth);
 
+		// 被弾の声（キャラだけ。塊は声を出さない）
+		if (NewHealth > 0.f)
+		{
+			if (AMockBossCharacterBase* Character = Cast<AMockBossCharacterBase>(GetOwningActor()))
+			{
+				Character->NotifyDamaged(Damage);
+			}
+		}
+
 		// 必殺技ゲージ：受けた側と与えた側の両方に溜まる（塊を殴った時は溜めない）
 		if (!TargetASC.HasMatchingGameplayTag(SlayerTags::Actor_CrushChunk))
 		{
 			AddUltimateCharge(&TargetASC, Damage * UltimateChargePerDamageTaken);
 			AddUltimateCharge(Data.EffectSpec.GetContext().GetOriginalInstigatorAbilitySystemComponent(), Damage * UltimateChargePerDamageDealt);
+
+			// 与えた側に知らせる（プレイヤーの変身ゲージが溜まる）
+			const UAbilitySystemComponent* SourceASC = Data.EffectSpec.GetContext().GetOriginalInstigatorAbilitySystemComponent();
+			if (AMockBossCharacterBase* SourceCharacter = SourceASC ? Cast<AMockBossCharacterBase>(SourceASC->GetAvatarActor()) : nullptr)
+			{
+				SourceCharacter->NotifyDamageDealt(Damage);
+			}
 		}
 
 		if (NewHealth <= 0.f)

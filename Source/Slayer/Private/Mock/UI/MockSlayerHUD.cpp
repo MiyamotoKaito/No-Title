@@ -1,18 +1,18 @@
-#include "UI/MockSlayerHUD.h"
+#include "Mock/UI/MockSlayerHUD.h"
 
 #include "AbilitySystemComponent.h"
-#include "AbilitySystem/MockSlayerAttributeSet.h"
-#include "Character/MockBossCharacterBase.h"
-#include "Data/MockBossDefinition.h"
+#include "Mock/AbilitySystem/MockSlayerAttributeSet.h"
+#include "Mock/Character/MockBossCharacterBase.h"
+#include "Mock/Data/MockBossDefinition.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
 #include "Engine/GameInstance.h"
-#include "Game/MockBattleGameMode.h"
-#include "Game/MockBattleGameState.h"
-#include "Game/MockCrushChunk.h"
-#include "Game/MockSlayerSubsystems.h"
-#include "Player/MockSlayerPlayerController.h"
+#include "Mock/Game/MockBattleGameMode.h"
+#include "Mock/Game/MockBattleGameState.h"
+#include "Mock/Game/MockCrushChunk.h"
+#include "Mock/Game/MockSlayerSubsystems.h"
+#include "Mock/Player/MockSlayerPlayerController.h"
 #include "SlayerGameplayTags.h"
 
 namespace
@@ -26,6 +26,7 @@ namespace
 	const FLinearColor ColorGold(1.f, 0.85f, 0.35f);
 	const FLinearColor ColorText(1.f, 1.f, 1.f);
 	const FLinearColor ColorDim(0.7f, 0.7f, 0.7f);
+	const FLinearColor ColorChange(0.3f, 0.95f, 0.9f);
 
 	FString GetDisplayName(const UMockBossDefinition* Definition)
 	{
@@ -112,8 +113,10 @@ void AMockSlayerHUD::DrawHUD()
 		DrawBossPanel(Boss);
 	}
 	DrawPlayerPanel(Player);
+	DrawBossChangePanel();
 	DrawUltimateCallouts(Player, Boss);
 	DrawControls();
+	DrawBossChangeCutIn();
 }
 
 void AMockSlayerHUD::DrawBossPanel(const AMockBossCharacterBase* Boss)
@@ -250,7 +253,7 @@ void AMockSlayerHUD::DrawPhaseBanner(const AMockBattleGameState* State, const AM
 		DrawTextCentered(TEXT("CAPTURED"), Canvas->SizeY * 0.12f, 3.5f, ColorGold);
 		if (Boss != nullptr)
 		{
-			DrawTextCentered(FString::Printf(TEXT("%s  Lv.%d  joins you!"), *GetFormNameAt(Boss, Boss->BossLevel).ToUpper(), Boss->BossLevel), Canvas->SizeY * 0.8f, 2.f, ColorText);
+			DrawTextCentered(FString::Printf(TEXT("You can now BOSS CHANGE into %s!"), *GetDisplayName(Boss).ToUpper()), Canvas->SizeY * 0.8f, 2.f, ColorText);
 		}
 		break;
 	}
@@ -292,7 +295,7 @@ void AMockSlayerHUD::DrawResult()
 		DrawTextCentered(FString::Printf(TEXT("CAPTURED  %s"), *BossName), Y, 3.f, ColorGold);
 		if (Result.bNewCapture)
 		{
-			DrawTextCentered(TEXT("NEW!  You can now fight as this boss."), Y + 70.f * UIScale, 1.3f, ColorText);
+			DrawTextCentered(TEXT("NEW!  Boss Change unlocked for this boss."), Y + 70.f * UIScale, 1.3f, ColorText);
 		}
 	}
 	else
@@ -313,6 +316,23 @@ void AMockSlayerHUD::DrawResult()
 		DrawTextCentered(FString::Printf(TEXT("EVOLVED!   %s  ->  %s"), *Result.OldFormName.ToString(), *Result.NewFormName.ToString()), Y + 80.f * UIScale, 1.5f, ColorUltimate);
 	}
 
+	// 変身した姿の成長と、新しく使えるようになったキャラ（キャラ選択の上に小さく）
+	float InfoY = Canvas->SizeY * 0.41f;
+	for (const FMockSlayerFormExp& Form : Result.FormResults)
+	{
+		const bool bLevelUp = Form.NewLevel > Form.OldLevel;
+		DrawTextCentered(bLevelUp
+			? FString::Printf(TEXT("Boss Change  %s   Lv.%d -> Lv.%d"), *GetDisplayName(Form.Form), Form.OldLevel, Form.NewLevel)
+			: FString::Printf(TEXT("Boss Change  %s   EXP +%d"), *GetDisplayName(Form.Form), Result.ExpGained),
+			InfoY, 1.1f, bLevelUp ? ColorChange : ColorDim);
+		InfoY += 26.f * UIScale;
+	}
+	for (const UMockBossDefinition* Unlocked : Result.NewlyUnlocked)
+	{
+		DrawTextCentered(FString::Printf(TEXT("NEW CHARACTER!  %s"), *GetDisplayName(Unlocked)), InfoY, 1.3f, ColorGold);
+		InfoY += 30.f * UIScale;
+	}
+
 	// キャラ選択
 	const AMockBattleGameMode* GameMode = GetWorld()->GetAuthGameMode<AMockBattleGameMode>();
 	const AMockSlayerPlayerController* PC = Cast<AMockSlayerPlayerController>(GetOwningPlayerController());
@@ -321,7 +341,7 @@ void AMockSlayerHUD::DrawResult()
 		return;
 	}
 
-	Y = Canvas->SizeY * 0.48f;
+	Y = FMath::Max(Canvas->SizeY * 0.5f, InfoY + 10.f * UIScale);
 	DrawTextCentered(TEXT("Choose your character"), Y, 1.4f, ColorText);
 	Y += 50.f * UIScale;
 
@@ -341,6 +361,13 @@ void AMockSlayerHUD::DrawResult()
 		Y += 40.f * UIScale;
 	}
 
+	// まだ使えないキャラは、解放されるレベルだけ見せる
+	for (const UMockBossDefinition* Locked : GameMode->GetLockedCharacters())
+	{
+		DrawTextCentered(FString::Printf(TEXT("[ LOCKED ]  %s   unlocks at Lv.%d"), *GetDisplayName(Locked), Locked->UnlockLevel), Y, 1.f, ColorDim * 0.8f);
+		Y += 30.f * UIScale;
+	}
+
 	DrawTextCentered(TEXT("1-4 / Left Right : choose    Enter : next battle"), Canvas->SizeY * 0.88f, 1.1f, ColorText);
 }
 
@@ -351,6 +378,7 @@ void AMockSlayerHUD::DrawControls()
 	DrawTextAt(TEXT("WASD Move   Mouse Camera"), X, Y, 0.8f, ColorDim);
 	DrawTextAt(TEXT("LMB Combo   RMB Skill   Q Ultimate"), X, Y + 20.f * UIScale, 0.8f, ColorDim);
 	DrawTextAt(TEXT("Space Dodge   Tab / Wheel Lock-on"), X, Y + 40.f * UIScale, 0.8f, ColorDim);
+	DrawTextAt(TEXT("F / 1-4 Boss Change"), X, Y + 60.f * UIScale, 0.8f, ColorDim);
 
 	// ロックオン中の表示
 	const AMockSlayerPlayerController* PC = Cast<AMockSlayerPlayerController>(GetOwningPlayerController());
@@ -358,6 +386,91 @@ void AMockSlayerHUD::DrawControls()
 	{
 		DrawTextCentered(TEXT("[ LOCK ON ]"), Canvas->SizeY * 0.9f, 1.f, ColorBreak);
 	}
+}
+
+void AMockSlayerHUD::DrawBossChangePanel()
+{
+	const AMockSlayerPlayerController* PC = Cast<AMockSlayerPlayerController>(GetOwningPlayerController());
+	if (PC == nullptr)
+	{
+		return;
+	}
+
+	// 操作キャラのパネルの上に出す
+	const float X = 40.f * UIScale;
+	const float Y = Canvas->SizeY - 245.f * UIScale;
+	const float Width = Canvas->SizeX * 0.25f;
+	const float Pulse = 0.55f + 0.45f * FMath::Abs(FMath::Sin(GetWorld()->GetRealTimeSeconds() * 6.f));
+
+	// 変身中：残り時間
+	if (PC->IsBossChanged())
+	{
+		DrawTextAt(TEXT("BOSS CHANGED      F  Return"), X, Y, 1.f, ColorChange);
+		DrawBar(X, Y + 26.f * UIScale, Width, 10.f * UIScale, PC->GetChangeRemainingPercent(), ColorChange);
+		return;
+	}
+
+	const TArray<UMockBossDefinition*> Candidates = PC->GetChangeCandidates();
+	const bool bReady = PC->IsChangeReady();
+	DrawTextAt(bReady ? FString(TEXT("BOSS CHANGE READY!")) : FString::Printf(TEXT("Boss Change  %d%%"), FMath::FloorToInt(PC->GetChangeChargePercent() * 100.f)),
+		X, Y, bReady ? 1.1f : 0.9f, bReady ? ColorChange * Pulse : ColorDim);
+	DrawBar(X, Y + 26.f * UIScale, Width, 10.f * UIScale, PC->GetChangeChargePercent(), bReady ? ColorChange * Pulse : ColorChange * 0.6f);
+
+	// 変身先（数字キー）。まだ誰も獲得していなければ案内だけ
+	if (Candidates.Num() == 0)
+	{
+		DrawTextAt(TEXT("Capture a boss to unlock Boss Change"), X, Y + 42.f * UIScale, 0.8f, ColorDim);
+		return;
+	}
+	const UMockProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UMockProgressSubsystem>();
+	FString Line;
+	for (int32 Index = 0; Index < Candidates.Num() && Index < 4; ++Index)
+	{
+		const int32 Level = Progress ? Progress->GetLevel(Candidates[Index]) : 1;
+		Line += FString::Printf(TEXT("%d %s Lv.%d   "), Index + 1, *GetFormNameAt(Candidates[Index], Level), Level);
+	}
+	DrawTextAt(Line, X, Y + 42.f * UIScale, 0.8f, bReady ? ColorText : ColorDim);
+}
+
+void AMockSlayerHUD::DrawBossChangeCutIn()
+{
+	const AMockSlayerPlayerController* PC = Cast<AMockSlayerPlayerController>(GetOwningPlayerController());
+	FText Name;
+	int32 Level = 1;
+	float Age = 0.f;
+	if (PC == nullptr || !PC->GetChangeBanner(Name, Level, Age))
+	{
+		return;
+	}
+
+	// 白い閃光（最初の一瞬）
+	const float Flash = 1.f - FMath::Clamp(Age / 0.35f, 0.f, 1.f);
+	if (Flash > 0.f)
+	{
+		DrawRect(FLinearColor(1.f, 1.f, 1.f, 0.85f * Flash), 0.f, 0.f, Canvas->SizeX, Canvas->SizeY);
+	}
+
+	// 帯と名前が横から滑り込み、最後に消える
+	const float In = FMath::InterpEaseOut(0.f, 1.f, FMath::Clamp(Age / 0.3f, 0.f, 1.f), 3.f);
+	const float Out = 1.f - FMath::Clamp((Age - 1.8f) / 0.4f, 0.f, 1.f);
+	const float Alpha = In * Out;
+	const float BandY = Canvas->SizeY * 0.36f;
+	const float BandHeight = Canvas->SizeY * 0.2f;
+	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f * Alpha), 0.f, BandY, Canvas->SizeX, BandHeight);
+	DrawRect(ColorChange * FLinearColor(1.f, 1.f, 1.f, Alpha), 0.f, BandY, Canvas->SizeX, 4.f * UIScale);
+	DrawRect(ColorChange * FLinearColor(1.f, 1.f, 1.f, Alpha), 0.f, BandY + BandHeight - 4.f * UIScale, Canvas->SizeX, 4.f * UIScale);
+
+	const float Slide = (1.f - In) * Canvas->SizeX * 0.6f;
+	auto DrawSliding = [this, Slide](const FString& Text, float TextY, float Scale, const FLinearColor& Color, float Direction)
+	{
+		float Width = 0.f;
+		float Height = 0.f;
+		GetTextSize(Text, Width, Height, GEngine->GetMediumFont(), Scale * UIScale);
+		DrawText(Text, Color, (Canvas->SizeX - Width) * 0.5f + Slide * Direction, TextY, GEngine->GetMediumFont(), Scale * UIScale);
+	};
+	DrawSliding(TEXT("-  BOSS CHANGE  -"), BandY + BandHeight * 0.08f, 1.4f, FLinearColor(ColorGold.R, ColorGold.G, ColorGold.B, Alpha), -1.f);
+	DrawSliding(Name.ToString().ToUpper(), BandY + BandHeight * 0.3f, 3.6f, FLinearColor(1.f, 1.f, 1.f, Alpha), 1.f);
+	DrawSliding(FString::Printf(TEXT("Lv.%d"), Level), BandY + BandHeight * 0.74f, 1.2f, FLinearColor(ColorChange.R, ColorChange.G, ColorChange.B, Alpha), -1.f);
 }
 
 void AMockSlayerHUD::DrawBar(float X, float Y, float Width, float Height, float Percent, const FLinearColor& Color)

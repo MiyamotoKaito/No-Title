@@ -14,6 +14,7 @@ class AMockBossCharacterBase;
  * - 操作キャラの HP・必殺技ゲージ・クールダウン（左下）
  * - フェーズの表示（登場・撃破・砕く残り時間・獲得演出）
  * - 必殺技の技名（自分が撃った時は大きく、ボスが撃つ時は警告）
+ * - ボスチェンジのゲージ・変身先・変身した瞬間のカットイン
  * - リザルト（獲得の成否・経験値・レベルアップ・キャラ選択）
  */
 UCLASS()
@@ -30,6 +31,10 @@ private:
 	void DrawPhaseBanner(const AMockBattleGameState* State, const AMockBossCharacterBase* Player);
 	void DrawUltimateCallouts(const AMockBossCharacterBase* Player, const AMockBossCharacterBase* Boss);
 	void DrawResult();
+
+	// ボスチェンジ：ゲージと変身先（操作キャラの上）、変身した瞬間のカットイン
+	void DrawBossChangePanel();
+	void DrawBossChangeCutIn();
 	void DrawControls();
 
 	void DrawBar(float X, float Y, float Width, float Height, float Percent, const FLinearColor& Color);

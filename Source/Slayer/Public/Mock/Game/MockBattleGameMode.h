@@ -5,13 +5,15 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
-#include "Game/MockBattleGameState.h"
+#include "Mock/Game/MockBattleGameState.h"
 #include "MockBattleGameMode.generated.h"
 
 class AMockBossCharacterBase;
 class AMockCrushChunk;
 class UMockBossDefinition;
 class UParticleSystem;
+class USoundBase;
+struct FMockSlayerVoiceSet;
 
 UCLASS()
 class SLAYER_API AMockBattleGameMode : public AGameModeBase
@@ -27,19 +29,33 @@ public:
 	// リザルト画面から呼ぶ：選んだキャラで次のバトルを始める（レベルを開き直す）
 	void RequestNextBattle(UMockBossDefinition* CharacterChoice);
 
-	// 獲得済みのキャラ一覧（リザルトのキャラ選択用）
+	// 使える操作キャラの一覧（リザルトのキャラ選択用）
 	TArray<UMockBossDefinition*> GetSelectableCharacters() const;
+
+	// まだ使えない操作キャラ（解放レベルの低い順）
+	TArray<UMockBossDefinition*> GetLockedCharacters() const;
+
+	// 操作キャラの中で一番高いレベル（操作キャラの解放に使う）
+	int32 GetHighestCharacterLevel() const;
 
 	UMockBossDefinition* GetStarterCharacter() const { return StarterCharacter; }
 
 protected:
-	// 通常ボスの一覧（この順番で挑んでいく）
+	// 敵として出てくるボスの一覧（勝つたびに順番に入れ替わる）
 	UPROPERTY(EditDefaultsOnly, Category = "Battle")
 	TArray<TObjectPtr<UMockBossDefinition>> BossRoster;
 
-	// まだ1体も獲得していない時の操作キャラ（最初から所持している）
+	// 操作キャラの一覧（ボスとしては出てこない）。定義の UnlockLevel で解放される
+	UPROPERTY(EditDefaultsOnly, Category = "Battle")
+	TArray<TObjectPtr<UMockBossDefinition>> PlayableCharacters;
+
+	// 最初に使う操作キャラ
 	UPROPERTY(EditDefaultsOnly, Category = "Battle")
 	TObjectPtr<UMockBossDefinition> StarterCharacter;
+
+	// 最初から変身できるボス（倒して獲得しなくても変身できる）
+	UPROPERTY(EditDefaultsOnly, Category = "Battle")
+	TArray<TObjectPtr<UMockBossDefinition>> DefaultChangeForms;
 
 	// 登場演出の長さ（IntroMontage が無い時）
 	UPROPERTY(EditDefaultsOnly, Category = "Battle")
@@ -98,6 +114,9 @@ private:
 	void StartCaptureCinematic(const FVector& Location);
 	void StartEvolutionCinematic(int32 NewLevel);
 
+	// 少し遅らせてキャラにボイスを言わせる（Voice は FMockSlayerVoiceSet のどの声か）
+	void PlayVoiceLater(AMockBossCharacterBase* Character, TObjectPtr<USoundBase> FMockSlayerVoiceSet::* Voice, float Delay);
+
 	// 演出用のカメラに切り替える（前のカメラは消す）
 	void ViewFromCamera(const FVector& CameraLocation, const FVector& Focus, float BlendTime);
 	void BeginBattle();
@@ -111,8 +130,8 @@ private:
 	void OnCrushTimeout();
 	void FinishBattle(bool bVictory, bool bCaptured);
 
-	// まだ獲得していないボスを順に選ぶ（全員獲得済みならランダム）
-	UMockBossDefinition* ChooseNextBoss(const UMockBossDefinition* Exclude) const;
+	// 次に戦うボス（直前に勝ったボスの次。初めてなら一覧の先頭）
+	UMockBossDefinition* ChooseNextBoss() const;
 	UMockBossDefinition* GetPlayerDefinition() const;
 	AMockBattleGameState* GetBattleGameState() const;
 

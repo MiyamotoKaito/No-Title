@@ -1,7 +1,7 @@
-#include "AbilitySystem/MockSlayerDamageExecution.h"
+#include "Mock/AbilitySystem/MockSlayerDamageExecution.h"
 
 #include "AbilitySystemComponent.h"
-#include "AbilitySystem/MockSlayerAttributeSet.h"
+#include "Mock/AbilitySystem/MockSlayerAttributeSet.h"
 #include "SlayerGameplayTags.h"
 
 namespace

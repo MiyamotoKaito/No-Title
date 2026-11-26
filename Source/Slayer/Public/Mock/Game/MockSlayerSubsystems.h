@@ -10,6 +10,24 @@
 class UMockBossDefinition;
 
 /**
+ * バトルで変身した姿（ボス）が得た経験値
+ */
+USTRUCT(BlueprintType)
+struct SLAYER_API FMockSlayerFormExp
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Result")
+	TObjectPtr<UMockBossDefinition> Form;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Result")
+	int32 OldLevel = 1;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Result")
+	int32 NewLevel = 1;
+};
+
+/**
  * 直前のバトルの結果
  */
 USTRUCT(BlueprintType)
@@ -56,6 +74,14 @@ struct SLAYER_API FMockSlayerBattleResult
 
 	UPROPERTY(BlueprintReadOnly, Category = "Result")
 	FText NewFormName;
+
+	// 変身した姿（ボス）も同じだけ経験値を得る
+	UPROPERTY(BlueprintReadOnly, Category = "Result")
+	TArray<FMockSlayerFormExp> FormResults;
+
+	// このバトルのレベルアップで新しく使えるようになった操作キャラ
+	UPROPERTY(BlueprintReadOnly, Category = "Result")
+	TArray<TObjectPtr<UMockBossDefinition>> NewlyUnlocked;
 };
 
 /**
@@ -100,7 +126,8 @@ public:
 };
 
 /**
- * 進行状況（獲得済みのボスと、キャラごとのレベル・経験値）
+ * 進行状況（変身できるボスと、キャラごとのレベル・経験値）
+ * 「獲得済みのボス」＝変身できるボス（最初から変身できるボスも含む）
  * Alpha ではゲーム起動中だけ保持する（セーブはロードマップ3で入れる）
  */
 UCLASS()

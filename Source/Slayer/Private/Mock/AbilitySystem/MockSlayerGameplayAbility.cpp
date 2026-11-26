@@ -1,13 +1,13 @@
-#include "AbilitySystem/MockSlayerGameplayAbility.h"
+#include "Mock/AbilitySystem/MockSlayerGameplayAbility.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
-#include "AbilitySystem/MockSlayerGameplayEffects.h"
+#include "Mock/AbilitySystem/MockSlayerGameplayEffects.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionConstantForce.h"
-#include "Character/MockBossCharacterBase.h"
-#include "Data/MockBossDefinition.h"
+#include "Mock/Character/MockBossCharacterBase.h"
+#include "Mock/Data/MockBossDefinition.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "SlayerGameplayTags.h"
@@ -246,10 +246,13 @@ void UMockSlayerGameplayAbility::ApplyLunge(float Distance, float Duration)
 		return;
 	}
 
+	// 体の大きいキャラは、踏み込みも止まる距離も大きくする
+	const float BodyScale = Character->GetBodyScale();
+
 	// 目の前に相手がいれば、相手の手前で止まるように距離を縮める
-	constexpr float StopDistance = 130.f;
-	float LungeDistance = Distance;
-	if (const AActor* Target = Character->FindCombatTarget(Distance + StopDistance + 200.f))
+	const float StopDistance = 130.f * BodyScale;
+	float LungeDistance = Distance * BodyScale;
+	if (const AActor* Target = Character->FindCombatTarget(LungeDistance + StopDistance + 200.f))
 	{
 		const FVector ToTarget = Target->GetActorLocation() - Character->GetActorLocation();
 		const float Ahead = FVector::DotProduct(ToTarget.GetSafeNormal2D(), Character->GetActorForwardVector());
@@ -282,20 +285,25 @@ void UMockSlayerGameplayAbility::ExecuteHit(const FMockSlayerHitEvent& Hit) cons
 		return;
 	}
 
+	// Offset はアクターの拡大に合わせて自動で伸びる。半径・射程・エフェクトは体の大きさを掛ける
+	const float BodyScale = Character->GetBodyScale();
+	const float Radius = Hit.Radius * BodyScale;
+	const float EffectScale = Hit.EffectScale * BodyScale;
+
 	const FTransform& Transform = Character->GetActorTransform();
 	const FVector Start = Transform.TransformPosition(Hit.Offset);
-	const FVector End = Hit.Range > 0.f ? Start + Character->GetActorForwardVector() * Hit.Range : Start;
+	const FVector End = Hit.Range > 0.f ? Start + Character->GetActorForwardVector() * Hit.Range * BodyScale : Start;
 
 	// 技のエフェクト（爆発・マズルフラッシュなど）
 	if (Hit.CastEffect != nullptr)
 	{
 		if (Hit.CastSocket.IsNone())
 		{
-			Character->SpawnEffectAtLocation(Hit.CastEffect, Start, Character->GetActorRotation(), Hit.EffectScale);
+			Character->SpawnEffectAtLocation(Hit.CastEffect, Start, Character->GetActorRotation(), EffectScale);
 		}
 		else
 		{
-			Character->SpawnEffectAttached(Hit.CastEffect, Hit.CastSocket, Hit.EffectScale);
+			Character->SpawnEffectAttached(Hit.CastEffect, Hit.CastSocket, EffectScale);
 		}
 	}
 
@@ -311,11 +319,11 @@ void UMockSlayerGameplayAbility::ExecuteHit(const FMockSlayerHitEvent& Hit) cons
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(SlayerHit), false, Character);
 
 	TArray<FHitResult> HitResults;
-	World->SweepMultiByObjectType(HitResults, Start, End + FVector(0.f, 0.f, 0.01f), FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(Hit.Radius), QueryParams);
+	World->SweepMultiByObjectType(HitResults, Start, End + FVector(0.f, 0.f, 0.01f), FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(Radius), QueryParams);
 
 	if (CVarSlayerDebugHits.GetValueOnGameThread() > 0)
 	{
-		DrawDebugCapsule(World, (Start + End) * 0.5f, (End - Start).Size() * 0.5f + Hit.Radius, Hit.Radius,
+		DrawDebugCapsule(World, (Start + End) * 0.5f, (End - Start).Size() * 0.5f + Radius, Radius,
 			FRotationMatrix::MakeFromZ(End - Start + FVector(0.f, 0.f, 0.01f)).ToQuat(), HitResults.Num() > 0 ? FColor::Red : FColor::Green, false, 0.5f);
 	}
 
@@ -352,7 +360,7 @@ void UMockSlayerGameplayAbility::ExecuteHit(const FMockSlayerHitEvent& Hit) cons
 			Impact = Character->GetDefinition()->ImpactEffect;
 		}
 		const FVector ImpactLocation = Result.bBlockingHit || !Result.ImpactPoint.IsZero() ? FVector(Result.ImpactPoint) : TargetActor->GetActorLocation();
-		Character->SpawnEffectAtLocation(Impact, ImpactLocation, (Character->GetActorLocation() - ImpactLocation).Rotation(), Hit.EffectScale);
+		Character->SpawnEffectAtLocation(Impact, ImpactLocation, (Character->GetActorLocation() - ImpactLocation).Rotation(), EffectScale);
 
 		Character->NotifyHitLanded(TargetActor);
 	}

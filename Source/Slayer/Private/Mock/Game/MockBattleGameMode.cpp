@@ -1,26 +1,39 @@
-#include "Game/MockBattleGameMode.h"
+#include "Mock/Game/MockBattleGameMode.h"
 
 #include "AIController.h"
 #include "Camera/CameraActor.h"
 #include "Particles/ParticleSystem.h"
-#include "Character/MockBossCharacterBase.h"
-#include "Data/MockBossDefinition.h"
+#include "Mock/Character/MockBossCharacterBase.h"
+#include "Mock/Data/MockBossDefinition.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "Game/MockCrushChunk.h"
-#include "Game/MockSlayerSubsystems.h"
+#include "Mock/Game/MockCrushChunk.h"
+#include "Mock/Game/MockSlayerSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
-#include "Player/MockSlayerPlayerController.h"
+#include "Mock/Player/MockSlayerPlayerController.h"
 #include "TimerManager.h"
-#include "UI/MockSlayerHUD.h"
+#include "Mock/UI/MockSlayerHUD.h"
 
 namespace
 {
 	// 開発用：経験値の倍率（進化の確認などに使う）
 	TAutoConsoleVariable<float> CVarSlayerExpScale(TEXT("slayer.ExpScale"), 1.f, TEXT("経験値の倍率（開発用）"));
+	// 開発用：全ボスを獲得済みにする（変身の確認用。起動時の -ExecCmds か、次のバトルから効く）
+	TAutoConsoleVariable<int32> CVarSlayerUnlockAll(TEXT("slayer.UnlockAll"), 0, TEXT("1 で全ボスを獲得済みにする（開発用）"));
+	// 開発用：戦うボスを名前で指定する（例：slayer.Boss Sevarog）。空なら通常の順番
+	TAutoConsoleVariable<FString> CVarSlayerBoss(TEXT("slayer.Boss"), TEXT(""), TEXT("戦うボスの名前（DA 名の一部。開発用）"));
+
+	// プレイヤーが変身していたら元に戻す（獲得演出・リザルトは元のキャラで行う）
+	void EndPlayerBossChange(const UObject* WorldContext)
+	{
+		if (AMockSlayerPlayerController* PC = Cast<AMockSlayerPlayerController>(UGameplayStatics::GetPlayerController(WorldContext, 0)))
+		{
+			PC->EndBossChange(false);
+		}
+	}
 }
 
 AMockBattleGameMode::AMockBattleGameMode()
@@ -35,10 +48,13 @@ void AMockBattleGameMode::StartPlay()
 {
 	Super::StartPlay();
 
-	// 初期キャラは最初から獲得済みにしておく
+	// 最初から変身できるボス（Lv.1 から育てる）
 	if (UMockProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UMockProgressSubsystem>())
 	{
-		Progress->AddCapturedBoss(StarterCharacter, 1);
+		for (const TObjectPtr<UMockBossDefinition>& Form : DefaultChangeForms)
+		{
+			Progress->AddCapturedBoss(Form, 1);
+		}
 	}
 
 	// プレイヤーの Spawn と Possess が終わってから始める
@@ -94,6 +110,16 @@ void AMockBattleGameMode::SetPhase(EMockBattlePhase NewPhase, float Duration)
 
 void AMockBattleGameMode::BeginBattle()
 {
+	// 開発用：全ボスを獲得済みにする（変身の確認用）
+	UMockProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UMockProgressSubsystem>();
+	if (Progress != nullptr && CVarSlayerUnlockAll.GetValueOnGameThread() > 0)
+	{
+		for (const TObjectPtr<UMockBossDefinition>& RosterBoss : BossRoster)
+		{
+			Progress->AddCapturedBoss(RosterBoss, 1);
+		}
+	}
+
 	SpawnBoss();
 
 	AMockBattleGameState* State = GetBattleGameState();
@@ -103,6 +129,13 @@ void AMockBattleGameMode::BeginBattle()
 		UE_LOG(LogTemp, Error, TEXT("[Battle] ボスを出せませんでした。BP_BattleGameMode の BossRoster を確認してください"));
 		return;
 	}
+
+	// 登場のかけ合い：ボスが名乗り、少ししてプレイヤーが返す
+	if (const FMockSlayerVoiceSet* BossVoices = Boss->GetVoices())
+	{
+		Boss->PlayVoice(BossVoices->IntroBoast, AMockBossCharacterBase::EVoicePriority::Important);
+	}
+	PlayVoiceLater(Cast<AMockBossCharacterBase>(UGameplayStatics::GetPlayerPawn(this, 0)), &FMockSlayerVoiceSet::IntroResponse, 2.2f);
 
 	// 登場演出（Intro）→ バトル開始
 	float Duration = Boss->PlayIntro();
@@ -118,7 +151,21 @@ void AMockBattleGameMode::BeginBattle()
 void AMockBattleGameMode::SpawnBoss()
 {
 	UMockBattleSessionSubsystem* Session = GetGameInstance()->GetSubsystem<UMockBattleSessionSubsystem>();
-	CurrentBossDefinition = (Session && Session->SelectedBoss) ? Session->SelectedBoss.Get() : ChooseNextBoss(GetPlayerDefinition());
+	CurrentBossDefinition = (Session && Session->SelectedBoss) ? Session->SelectedBoss.Get() : ChooseNextBoss();
+
+	// 開発用：slayer.Boss で指定されたボスと戦う
+	const FString ForcedBoss = CVarSlayerBoss.GetValueOnGameThread();
+	if (!ForcedBoss.IsEmpty())
+	{
+		for (const TObjectPtr<UMockBossDefinition>& RosterBoss : BossRoster)
+		{
+			if (RosterBoss != nullptr && RosterBoss->GetName().Contains(ForcedBoss))
+			{
+				CurrentBossDefinition = RosterBoss;
+				break;
+			}
+		}
+	}
 	if (CurrentBossDefinition == nullptr)
 	{
 		return;
@@ -162,6 +209,7 @@ void AMockBattleGameMode::OnBossDied(AMockBossCharacterBase* DeadBoss)
 		return;
 	}
 
+	PlayVoiceLater(Cast<AMockBossCharacterBase>(UGameplayStatics::GetPlayerPawn(this, 0)), &FMockSlayerVoiceSet::Kill, 0.8f);
 	SetPhase(EMockBattlePhase::BossDown, BossDownDuration);
 	GetWorldTimerManager().SetTimer(PhaseTimer, this, &AMockBattleGameMode::StartCrush, BossDownDuration, false);
 }
@@ -174,6 +222,7 @@ void AMockBattleGameMode::OnPlayerDied(AMockBossCharacterBase* DeadPlayer)
 	{
 		return;
 	}
+	PlayVoiceLater(State->Boss, &FMockSlayerVoiceSet::Kill, 0.8f);
 	FinishBattle(false, false);
 }
 
@@ -229,6 +278,9 @@ void AMockBattleGameMode::OnChunkBroken(AMockCrushChunk* Chunk)
 
 void AMockBattleGameMode::StartCaptureCinematic(const FVector& Location)
 {
+	// 変身していたら元のキャラに戻ってから（ダメージ処理の外なので、ここで消してよい）
+	EndPlayerBossChange(this);
+
 	AMockBattleGameState* State = GetBattleGameState();
 	if (State != nullptr && State->Chunk != nullptr)
 	{
@@ -258,6 +310,7 @@ void AMockBattleGameMode::StartCaptureCinematic(const FVector& Location)
 		DisplayBoss->SetActorEnableCollision(false);
 		DisplayBoss->PlayIntro();
 		CaptureDisplayBoss = DisplayBoss;
+		PlayVoiceLater(DisplayBoss, &FMockSlayerVoiceSet::Catchphrase, 1.f);
 	}
 	UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), CaptureEffect, Location, FRotator::ZeroRotator);
 
@@ -266,8 +319,10 @@ void AMockBattleGameMode::StartCaptureCinematic(const FVector& Location)
 	{
 		PC->GetPawn()->SetActorHiddenInGame(true);
 	}
+	// 体の大きいボスほどカメラを引いて、全身が入るようにする
+	const float BodyScale = DisplayBoss ? DisplayBoss->GetBodyScale() : 1.f;
 	const FVector CameraDirection = ToPlayer.RotateAngleAxis(25.f, FVector::UpVector);
-	ViewFromCamera(Location + CameraDirection * 360.f + FVector(0.f, 0.f, 70.f), Location + FVector(0.f, 0.f, 60.f), 0.8f);
+	ViewFromCamera(Location + CameraDirection * 360.f * BodyScale + FVector(0.f, 0.f, 70.f * BodyScale), Location + FVector(0.f, 0.f, 60.f * BodyScale), 0.8f);
 
 	SetPhase(EMockBattlePhase::Capture, CaptureDuration);
 	GetWorldTimerManager().SetTimer(PhaseTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
@@ -283,6 +338,8 @@ void AMockBattleGameMode::OnCrushTimeout()
 
 void AMockBattleGameMode::FinishBattle(bool bVictory, bool bCaptured)
 {
+	EndPlayerBossChange(this);
+
 	AMockBattleGameState* State = GetBattleGameState();
 	if (State != nullptr && State->Chunk != nullptr)
 	{
@@ -298,11 +355,13 @@ void AMockBattleGameMode::FinishBattle(bool bVictory, bool bCaptured)
 
 	if (UMockProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UMockProgressSubsystem>())
 	{
-		// 獲得したボスは、戦った時のレベルのまま仲間になる
+		const int32 HighestLevelBefore = GetHighestCharacterLevel();
+
+		// 獲得したボスは変身できるようになる（Lv.1 から育てる）
 		const int32 BossLevel = CurrentBossDefinition ? CurrentBossDefinition->BossLevel : 1;
 		if (bCaptured)
 		{
-			Result.bNewCapture = Progress->AddCapturedBoss(CurrentBossDefinition, BossLevel);
+			Result.bNewCapture = Progress->AddCapturedBoss(CurrentBossDefinition, 1);
 		}
 
 		// 経験値：勝てば多め、獲得でボーナス、負けても少しは入る
@@ -317,6 +376,29 @@ void AMockBattleGameMode::FinishBattle(bool bVictory, bool bCaptured)
 		Result.OldLevel = Progress->GetLevel(Result.Character);
 		Progress->AddExp(Result.Character, Exp);
 		Result.NewLevel = Progress->GetLevel(Result.Character);
+
+		// 変身した姿も同じだけ育つ（使いこむほど強くなる）
+		if (const AMockSlayerPlayerController* PC = Cast<AMockSlayerPlayerController>(UGameplayStatics::GetPlayerController(this, 0)))
+		{
+			for (UMockBossDefinition* Form : PC->GetUsedChangeForms())
+			{
+				FMockSlayerFormExp& FormResult = Result.FormResults.AddDefaulted_GetRef();
+				FormResult.Form = Form;
+				FormResult.OldLevel = Progress->GetLevel(Form);
+				Progress->AddExp(Form, Exp);
+				FormResult.NewLevel = Progress->GetLevel(Form);
+			}
+		}
+
+		// レベルが上がって新しく使えるようになった操作キャラ
+		const int32 HighestLevelAfter = GetHighestCharacterLevel();
+		for (const TObjectPtr<UMockBossDefinition>& Character : PlayableCharacters)
+		{
+			if (Character != nullptr && Character->UnlockLevel > HighestLevelBefore && Character->UnlockLevel <= HighestLevelAfter)
+			{
+				Result.NewlyUnlocked.Add(Character);
+			}
+		}
 
 		// 形態が変わるレベルに達したら進化
 		if (Result.Character != nullptr && Result.Character->GetFormIndex(Result.NewLevel) > Result.Character->GetFormIndex(Result.OldLevel))
@@ -340,7 +422,30 @@ void AMockBattleGameMode::FinishBattle(bool bVictory, bool bCaptured)
 		return;
 	}
 
+	if (bVictory)
+	{
+		PlayVoiceLater(Cast<AMockBossCharacterBase>(UGameplayStatics::GetPlayerPawn(this, 0)), &FMockSlayerVoiceSet::Victory, 0.5f);
+	}
 	SetPhase(EMockBattlePhase::Result);
+}
+
+void AMockBattleGameMode::PlayVoiceLater(AMockBossCharacterBase* Character, TObjectPtr<USoundBase> FMockSlayerVoiceSet::* Voice, float Delay)
+{
+	if (Character == nullptr)
+	{
+		return;
+	}
+	TWeakObjectPtr<AMockBossCharacterBase> WeakCharacter = Character;
+	FTimerHandle Handle;
+	GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(this, [WeakCharacter, Voice]()
+	{
+		AMockBossCharacterBase* Target = WeakCharacter.Get();
+		const FMockSlayerVoiceSet* Voices = Target ? Target->GetVoices() : nullptr;
+		if (Voices != nullptr)
+		{
+			Target->PlayVoice(Voices->*Voice, AMockBossCharacterBase::EVoicePriority::Important);
+		}
+	}), FMath::Max(Delay, 0.01f), false);
 }
 
 void AMockBattleGameMode::StartEvolutionCinematic(int32 NewLevel)
@@ -424,12 +529,7 @@ void AMockBattleGameMode::RequestNextBattle(UMockBossDefinition* CharacterChoice
 	// 負けた時は同じボスに再挑戦。勝った時は次のボスへ
 	if (Session->LastResult.bVictory || Session->SelectedBoss == nullptr)
 	{
-		Session->SelectedBoss = ChooseNextBoss(Session->SelectedCharacter);
-	}
-	// 自分と同じボスとは戦わない
-	if (Session->SelectedBoss == Session->SelectedCharacter)
-	{
-		Session->SelectedBoss = ChooseNextBoss(Session->SelectedCharacter);
+		Session->SelectedBoss = ChooseNextBoss();
 	}
 
 	const FString LevelName = UGameplayStatics::GetCurrentLevelName(this, true);
@@ -439,40 +539,57 @@ void AMockBattleGameMode::RequestNextBattle(UMockBossDefinition* CharacterChoice
 TArray<UMockBossDefinition*> AMockBattleGameMode::GetSelectableCharacters() const
 {
 	TArray<UMockBossDefinition*> Result;
-	if (const UMockProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UMockProgressSubsystem>())
+	const int32 HighestLevel = GetHighestCharacterLevel();
+	for (const TObjectPtr<UMockBossDefinition>& Character : PlayableCharacters)
 	{
-		for (const TObjectPtr<UMockBossDefinition>& Boss : Progress->GetCapturedBosses())
+		if (Character != nullptr && (Character == StarterCharacter || Character->UnlockLevel <= HighestLevel))
 		{
-			if (Boss != nullptr)
-			{
-				Result.Add(Boss);
-			}
+			Result.Add(Character);
 		}
 	}
 	return Result;
 }
 
-UMockBossDefinition* AMockBattleGameMode::ChooseNextBoss(const UMockBossDefinition* Exclude) const
+TArray<UMockBossDefinition*> AMockBattleGameMode::GetLockedCharacters() const
+{
+	TArray<UMockBossDefinition*> Result;
+	const TArray<UMockBossDefinition*> Selectable = GetSelectableCharacters();
+	for (const TObjectPtr<UMockBossDefinition>& Character : PlayableCharacters)
+	{
+		if (Character != nullptr && !Selectable.Contains(Character.Get()))
+		{
+			Result.Add(Character);
+		}
+	}
+	Result.Sort([](const UMockBossDefinition& A, const UMockBossDefinition& B) { return A.UnlockLevel < B.UnlockLevel; });
+	return Result;
+}
+
+int32 AMockBattleGameMode::GetHighestCharacterLevel() const
 {
 	const UMockProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UMockProgressSubsystem>();
-
-	// まだ獲得していないボスを、一覧の順に
-	for (const TObjectPtr<UMockBossDefinition>& Boss : BossRoster)
+	int32 Highest = 1;
+	for (const TObjectPtr<UMockBossDefinition>& Character : PlayableCharacters)
 	{
-		if (Boss != nullptr && Boss.Get() != Exclude && (Progress == nullptr || !Progress->IsCaptured(Boss)))
+		if (Progress != nullptr && Character != nullptr)
 		{
-			return Boss;
+			Highest = FMath::Max(Highest, Progress->GetLevel(Character));
 		}
 	}
+	return Highest;
+}
 
-	// 全員獲得済みならランダム
-	TArray<UMockBossDefinition*> Candidates;
-	for (const TObjectPtr<UMockBossDefinition>& Boss : BossRoster)
+UMockBossDefinition* AMockBattleGameMode::ChooseNextBoss() const
+{
+	if (BossRoster.Num() == 0)
 	{
-		if (Boss != nullptr && Boss.Get() != Exclude)
-		{
-			Candidates.Add(Boss);
-		}
+		return nullptr;
 	}
-	return Candidates.Num() > 0 ? Candidates[FMath::RandRange(0, Candidates.Num() - 1)] : nullptr;
+
+	// 直前に戦ったボスの次（一覧の最後なら先頭に戻る）
+	const UMockBattleSessionSubsystem* Session = GetGameInstance()->GetSubsystem<UMockBattleSessionSubsystem>();
+	const UMockBossDefinition* LastBoss = Session ? Session->LastResult.Boss.Get() : nullptr;
+	const int32 LastIndex = BossRoster.IndexOfByKey(LastBoss);
+	const int32 NextIndex = LastIndex == INDEX_NONE ? 0 : (LastIndex + 1) % BossRoster.Num();
+	return BossRoster[NextIndex];
 }

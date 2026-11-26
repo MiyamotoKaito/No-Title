@@ -1,16 +1,18 @@
-#include "Character/MockBossCharacterBase.h"
+#include "Mock/Character/MockBossCharacterBase.h"
 
 #include "AbilitySystemComponent.h"
-#include "AI/MockSlayerBossAIController.h"
-#include "AbilitySystem/MockSlayerAbilities.h"
-#include "AbilitySystem/MockSlayerAttributeSet.h"
+#include "Mock/AI/MockSlayerBossAIController.h"
+#include "Mock/AbilitySystem/MockSlayerAbilities.h"
+#include "Mock/AbilitySystem/MockSlayerAttributeSet.h"
+#include "Mock/Character/MockSlayerSimpleAnimInstance.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
+#include "Components/AudioComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
-#include "Game/MockCrushChunk.h"
+#include "Mock/Game/MockCrushChunk.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -55,6 +57,11 @@ AMockBossCharacterBase::AMockBossCharacterBase()
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 12.f;
 
+	// ボイス（キャラの位置から鳴らす）
+	VoiceComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("Voice"));
+	VoiceComponent->SetupAttachment(RootComponent);
+	VoiceComponent->bAutoActivate = false;
+
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
@@ -98,6 +105,8 @@ void AMockBossCharacterBase::ApplyDefinitionVisuals()
 	}
 
 	GetCapsuleComponent()->SetCapsuleSize(Definition->CapsuleRadius, Definition->CapsuleHalfHeight);
+	// 体の大きさ：アクターごと拡大する（カプセル・メッシュ・技の位置がまとめて大きくなる）
+	SetActorScale3D(FVector(FMath::Max(Definition->BodyScale, 0.1f)));
 
 	// 進化していればその形態の見た目にする
 	USkeletalMeshComponent* MeshComponent = GetMesh();
@@ -107,9 +116,15 @@ void AMockBossCharacterBase::ApplyDefinitionVisuals()
 	{
 		MeshComponent->SetSkeletalMesh(TargetMesh);
 	}
-	if (Definition->AnimClass != nullptr && MeshComponent->GetAnimClass() != Definition->AnimClass)
+	// AnimBP が無いキャラは、移動アニメを速さで切り替える簡易アニメを使う
+	UClass* AnimClass = Definition->AnimClass.Get();
+	if (AnimClass == nullptr && Definition->IdleAnimation != nullptr)
 	{
-		MeshComponent->SetAnimInstanceClass(Definition->AnimClass);
+		AnimClass = UMockSlayerSimpleAnimInstance::StaticClass();
+	}
+	if (AnimClass != nullptr && MeshComponent->GetAnimClass() != AnimClass)
+	{
+		MeshComponent->SetAnimInstanceClass(AnimClass);
 	}
 	MeshComponent->SetRelativeLocationAndRotation(Definition->MeshLocation, Definition->MeshRotation);
 
@@ -361,11 +376,11 @@ AActor* AMockBossCharacterBase::FindCombatTarget(float MaxDistance) const
 		return nullptr;
 	}
 
-	// AI はプレイヤーを狙う
+	// AI はプレイヤーを狙う（変身中は変身した姿を狙う）
 	if (!IsPlayerControlled())
 	{
 		AMockBossCharacterBase* Player = Cast<AMockBossCharacterBase>(UGameplayStatics::GetPlayerPawn(this, 0));
-		return (Player != nullptr && !Player->IsDead()) ? Player : nullptr;
+		return (Player != nullptr && !Player->IsDead() && !Player->IsDormant()) ? Player : nullptr;
 	}
 
 	// プレイヤーは一番近い敵か塊を狙う
@@ -375,7 +390,7 @@ AActor* AMockBossCharacterBase::FindCombatTarget(float MaxDistance) const
 
 	for (TActorIterator<AMockBossCharacterBase> It(World); It; ++It)
 	{
-		if (*It == this || It->IsDead())
+		if (*It == this || It->IsDead() || It->IsDormant())
 		{
 			continue;
 		}
@@ -442,6 +457,11 @@ void AMockBossCharacterBase::HandleDeath()
 		GetMesh()->PlayAnimation(Definition->DeathAnimation, false);
 	}
 
+	if (const FMockSlayerVoiceSet* Voices = GetVoices())
+	{
+		PlayVoice(Voices->Death, EVoicePriority::Important);
+	}
+
 	OnDied.Broadcast(this);
 }
 
@@ -461,6 +481,10 @@ void AMockBossCharacterBase::Evolve(int32 NewLevel, UParticleSystem* Effect)
 	SetCharacterLevel(NewLevel);
 	SpawnEffectAttached(Effect, NAME_None, 1.5f);
 	PlayIntro();
+	if (const FMockSlayerVoiceSet* Voices = GetVoices())
+	{
+		PlayVoice(Voices->LevelUp, EVoicePriority::Important);
+	}
 }
 
 void AMockBossCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -474,9 +498,78 @@ void AMockBossCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+const FMockSlayerVoiceSet* AMockBossCharacterBase::GetVoices() const
+{
+	return Definition ? &Definition->Voices : nullptr;
+}
+
+void AMockBossCharacterBase::PlayVoice(USoundBase* Sound, EVoicePriority Priority, float Chance)
+{
+	if (Sound == nullptr || VoiceComponent == nullptr || FMath::FRand() > Chance)
+	{
+		return;
+	}
+	// 倒れた後は大事なセリフ（断末魔など）だけ
+	if (IsDead() && Priority != EVoicePriority::Important)
+	{
+		return;
+	}
+	// 鳴っている声より優先度が低ければ鳴らさない。掛け声どうしも重ねない
+	if (VoiceComponent->IsPlaying())
+	{
+		if (Priority < CurrentVoicePriority || (Priority == EVoicePriority::Effort && CurrentVoicePriority == EVoicePriority::Effort))
+		{
+			return;
+		}
+	}
+	VoiceComponent->SetSound(Sound);
+	VoiceComponent->Play();
+	CurrentVoicePriority = Priority;
+	UE_LOG(LogTemp, Verbose, TEXT("[Voice] %s : %s"), *GetNameSafe(Definition), *Sound->GetName());
+}
+
+void AMockBossCharacterBase::NotifyDamaged(float Damage)
+{
+	const FMockSlayerVoiceSet* Voices = GetVoices();
+	if (Voices == nullptr || AttributeSet == nullptr || IsDead() || Damage <= 0.f)
+	{
+		return;
+	}
+
+	// 体力が3割を切ったら1回だけ
+	const float MaxHealth = AttributeSet->GetMaxHealth();
+	if (!bHealthLowVoicePlayed && MaxHealth > 0.f && AttributeSet->GetHealth() / MaxHealth < 0.3f && AttributeSet->GetHealth() > 0.f)
+	{
+		bHealthLowVoicePlayed = true;
+		PlayVoice(Voices->HealthLow, EVoicePriority::Line);
+		return;
+	}
+
+	// 被弾の声は間隔をあける。大きいダメージほど確実に鳴らす
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now - LastPainVoiceTime < 1.2)
+	{
+		return;
+	}
+	LastPainVoiceTime = Now;
+	const bool bHeavy = MaxHealth > 0.f && Damage >= MaxHealth * 0.1f;
+	PlayVoice(bHeavy ? Voices->PainHeavy : Voices->Pain, EVoicePriority::Effort, bHeavy ? 1.f : 0.6f);
+}
+
 void AMockBossCharacterBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// 必殺技ゲージが満タンになった瞬間に声で知らせる（プレイヤー操作時）
+	if (IsPlayerControlled() && AttributeSet != nullptr && !IsDead())
+	{
+		const bool bReady = AttributeSet->GetMaxUltimateCharge() > 0.f && AttributeSet->GetUltimateCharge() >= AttributeSet->GetMaxUltimateCharge();
+		if (bReady && !bUltimateWasReady && GetVoices() != nullptr)
+		{
+			PlayVoice(GetVoices()->UltimateReady, EVoicePriority::Line);
+		}
+		bUltimateWasReady = bReady;
+	}
 
 	const UWorld* World = GetWorld();
 	if (World == nullptr)
@@ -525,8 +618,7 @@ void AMockBossCharacterBase::PlayUltimateCinematic(const FText& UltimateName, bo
 	}
 
 	// 一瞬スローにして「撃った」瞬間を見せる（初めての時は長め）
-	UGameplayStatics::SetGlobalTimeDilation(this, bFirstTime ? 0.2f : 0.35f);
-	SlowMotionEndRealTime = Now + (bFirstTime ? 1.4 : 0.6);
+	StartSlowMotion(bFirstTime ? 0.2f : 0.35f, bFirstTime ? 1.4f : 0.6f);
 
 	// プレイヤーが撃つ時はカメラを寄せる
 	if (IsPlayerControlled())
@@ -584,6 +676,57 @@ void AMockBossCharacterBase::SpawnEffectAttached(UParticleSystem* Effect, FName 
 	if (Effect != nullptr)
 	{
 		UGameplayStatics::SpawnEmitterAttached(Effect, GetMesh(), SocketName, FVector::ZeroVector, FRotator::ZeroRotator, FVector(Scale), EAttachLocation::SnapToTarget, true);
+	}
+}
+
+float AMockBossCharacterBase::GetBodyScale() const
+{
+	return Definition ? FMath::Max(Definition->BodyScale, 0.1f) : 1.f;
+}
+
+void AMockBossCharacterBase::NotifyDamageDealt(float Damage)
+{
+	OnDamageDealt.Broadcast(this, Damage);
+}
+
+void AMockBossCharacterBase::StartSlowMotion(float TimeDilation, float Duration)
+{
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+	UGameplayStatics::SetGlobalTimeDilation(this, TimeDilation);
+	// Tick で実時間を見て戻す（長い方を優先）
+	SlowMotionEndRealTime = FMath::Max(SlowMotionEndRealTime, World->GetRealTimeSeconds() + Duration);
+}
+
+void AMockBossCharacterBase::SetDormant(bool bInDormant)
+{
+	if (bDormant == bInDormant)
+	{
+		return;
+	}
+	bDormant = bInDormant;
+
+	// 技やモンタージュは止めておく（戻った時に途中から再開しないように）
+	if (bDormant && AbilitySystemComponent != nullptr)
+	{
+		AbilitySystemComponent->CancelAllAbilities();
+	}
+	StopWeaponTrail();
+
+	SetActorHiddenInGame(bDormant);
+	SetActorEnableCollision(!bDormant);
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (bDormant)
+	{
+		Movement->StopMovementImmediately();
+		Movement->DisableMovement();
+	}
+	else
+	{
+		Movement->SetMovementMode(MOVE_Walking);
 	}
 }
 

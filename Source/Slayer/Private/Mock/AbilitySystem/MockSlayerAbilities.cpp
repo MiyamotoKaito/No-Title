@@ -1,13 +1,13 @@
-#include "AbilitySystem/MockSlayerAbilities.h"
+#include "Mock/AbilitySystem/MockSlayerAbilities.h"
 
 #include "AbilitySystemComponent.h"
-#include "AbilitySystem/MockSlayerAttributeSet.h"
+#include "Mock/AbilitySystem/MockSlayerAttributeSet.h"
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionConstantForce.h"
-#include "Character/MockBossCharacterBase.h"
-#include "Data/MockBossDefinition.h"
+#include "Mock/Character/MockBossCharacterBase.h"
+#include "Mock/Data/MockBossDefinition.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "Game/MockSlayerSubsystems.h"
+#include "Mock/Game/MockSlayerSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "SlayerGameplayTags.h"
 #include "TimerManager.h"
@@ -49,6 +49,22 @@ void UGA_MockSlayerComboAttack::StartStage()
 
 	StageStartTime = GetWorld()->GetTimeSeconds();
 	ScheduleHits(Stage.Hits, Stage.PlayRate);
+
+	// 掛け声（最初の段はたまにセリフ）
+	if (AMockBossCharacterBase* Character = GetSlayerCharacter())
+	{
+		if (const FMockSlayerVoiceSet* Voices = Character->GetVoices())
+		{
+			if (StageIndex == 0 && FMath::FRand() < 0.3f)
+			{
+				Character->PlayVoice(Voices->AttackLine, AMockBossCharacterBase::EVoicePriority::Line);
+			}
+			else
+			{
+				Character->PlayVoice(Voices->AttackEffort, AMockBossCharacterBase::EVoicePriority::Effort, 0.6f);
+			}
+		}
+	}
 	ApplyLunge(Stage.LungeDistance, Stage.LungeDuration);
 
 	const float Rate = FMath::Max(Stage.PlayRate, 0.01f);
@@ -147,8 +163,19 @@ void UGA_MockSlayerMontageAttack::ActivateAbility(const FGameplayAbilitySpecHand
 	ScheduleHits(Hits, PlayRate);
 	ApplyLunge(LungeDistance, LungeDuration);
 
-	// 必殺技の演出。プレイヤーがそのキャラで初めて撃つ時は特別に長くする
 	AMockBossCharacterBase* Character = GetSlayerCharacter();
+
+	// スキル・必殺技のセリフ
+	if (Character != nullptr)
+	{
+		if (const FMockSlayerVoiceSet* Voices = Character->GetVoices())
+		{
+			Character->PlayVoice(bUltimate ? Voices->UltimateLine : Voices->SkillLine,
+				bUltimate ? AMockBossCharacterBase::EVoicePriority::Important : AMockBossCharacterBase::EVoicePriority::Line);
+		}
+	}
+
+	// 必殺技の演出。プレイヤーがそのキャラで初めて撃つ時は特別に長くする
 	if (bUltimate && Character != nullptr)
 	{
 		bool bFirstTime = false;
@@ -244,6 +271,11 @@ void UGA_MockSlayerDodge::ActivateAbility(const FGameplayAbilitySpecHandle Handl
 		Character->SetActorRotation(Direction.Rotation());
 	}
 
+	if (const FMockSlayerVoiceSet* Voices = Character->GetVoices())
+	{
+		Character->PlayVoice(Voices->DodgeEffort, AMockBossCharacterBase::EVoicePriority::Effort);
+	}
+
 	const float Duration = FMath::Max(DodgeDuration, 0.05f);
 	UAbilityTask_ApplyRootMotionConstantForce* Task = UAbilityTask_ApplyRootMotionConstantForce::ApplyRootMotionConstantForce(
 		this, TEXT("Dodge"), Direction, DodgeDistance / Duration, Duration, false, nullptr,
@@ -299,6 +331,7 @@ void UGA_MockSlayerBreak::ActivateAbility(const FGameplayAbilitySpecHandle Handl
 	}
 
 	Character->GetCharacterMovement()->StopMovementImmediately();
+	Character->PlayVoice(Definition->Voices.Break, AMockBossCharacterBase::EVoicePriority::Line);
 
 	if (Definition->BreakAnimation != nullptr)
 	{

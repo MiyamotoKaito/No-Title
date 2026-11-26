@@ -10,11 +10,13 @@
 #include "GameplayTagContainer.h"
 #include "GameplayAbilitySpec.h"
 #include "Abilities/GameplayAbilityTypes.h"
-#include "Data/MockBossDefinition.h"
+#include "Mock/Data/MockBossDefinition.h"
 #include "MockBossCharacterBase.generated.h"
 
 class UAbilitySystemComponent;
+class UAudioComponent;
 class UCameraComponent;
+class USoundBase;
 class UParticleSystem;
 class UParticleSystemComponent;
 class UMockSlayerAttributeSet;
@@ -22,6 +24,7 @@ class USpringArmComponent;
 class AMockBossCharacterBase;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnMockSlayerCharacterDied, AMockBossCharacterBase* /*DeadCharacter*/);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnMockSlayerDamageDealt, AMockBossCharacterBase* /*Source*/, float /*Damage*/);
 
 UCLASS()
 class SLAYER_API AMockBossCharacterBase : public ACharacter, public IAbilitySystemInterface
@@ -89,6 +92,21 @@ public:
 
 	FOnMockSlayerCharacterDied OnDied;
 
+	// 自分の攻撃が相手（塊以外）にダメージを与えた時（AttributeSet から呼ばれる）。変身ゲージに使う
+	void NotifyDamageDealt(float Damage);
+	FOnMockSlayerDamageDealt OnDamageDealt;
+
+	// 体の大きさ（定義の BodyScale）
+	float GetBodyScale() const;
+
+	// ---- 変身中のもとのキャラ ----
+	// 眠らせる：姿と当たり判定と動きを止め、誰の標的にもならないようにする（変身中のもとのキャラ用）
+	void SetDormant(bool bInDormant);
+	bool IsDormant() const { return bDormant; }
+
+	// 実時間で Duration 秒だけ、ゲーム全体をスローにする
+	void StartSlowMotion(float TimeDilation, float Duration);
+
 	UCameraComponent* GetCamera() const { return Camera; }
 
 	// ---- レベル ----
@@ -118,6 +136,24 @@ public:
 	// エフェクトを出す（null なら何もしない）
 	void SpawnEffectAtLocation(UParticleSystem* Effect, const FVector& Location, const FRotator& Rotation, float Scale = 1.f) const;
 	void SpawnEffectAttached(UParticleSystem* Effect, FName SocketName, float Scale = 1.f);
+
+	// ---- ボイス ----
+	// 声の優先度。高いものは低いものを遮って鳴る（掛け声 < セリフ < 大事なセリフ）
+	enum class EVoicePriority : uint8
+	{
+		Effort,
+		Line,
+		Important,
+	};
+
+	// ボイスを鳴らす（Chance の確率で）。キャラごとに1本の声だけ鳴らし、重ならないようにする
+	void PlayVoice(USoundBase* Sound, EVoicePriority Priority, float Chance = 1.f);
+
+	// 定義のボイス（無ければ null）
+	const FMockSlayerVoiceSet* GetVoices() const;
+
+	// ダメージを受けた時（AttributeSet から呼ばれる）。被弾や体力わずかの声を出す
+	void NotifyDamaged(float Damage);
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -172,6 +208,16 @@ private:
 	FTimerHandle HitStopTimer;
 
 	int32 CharacterLevel = 1;
+	bool bDormant = false;
+
+	// ボイス用（キャラごとに1本）
+	UPROPERTY(VisibleAnywhere, Category = "Slayer|Voice")
+	TObjectPtr<UAudioComponent> VoiceComponent;
+
+	EVoicePriority CurrentVoicePriority = EVoicePriority::Effort;
+	double LastPainVoiceTime = -100.0;
+	bool bHealthLowVoicePlayed = false;
+	bool bUltimateWasReady = false;
 
 	// 武器の軌跡（使い回す）
 	UPROPERTY(Transient)
