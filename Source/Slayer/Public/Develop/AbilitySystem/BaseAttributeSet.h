@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Copyright (c) 2026 Kaito Miyamoto. All rights reserved.
 
 #pragma once
 
@@ -48,6 +48,7 @@ public:
 	FGameplayAttributeData MaxUltimate;
 	
 	// =====関数=====
+	void InitAttributes() const;
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& EffectData) override;
