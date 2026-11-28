@@ -21,7 +21,7 @@ UAbilitySystemComponent* ABossCharacterBase::GetAbilitySystemComponent() const
 
 void ABossCharacterBase::SetBossData(const FBossAttributeInitData& InBossData, int32 InLevel)
 {
-	BossData = InBossData;
+	BossInitData = InBossData;
 	CharacterLevel = InLevel;
 }
 
@@ -48,31 +48,31 @@ void ABossCharacterBase::InitAttributes() const
 	}
 	// HP
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(),          
-		BossData.Health.GetValueAtLevel(CharacterLevel));
+		BossInitData.Health.GetValueAtLevel(CharacterLevel));
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 
 		ASC->GetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute()));
 	
 	// Power
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetPowerAttribute(),             
-		BossData.Power.GetValueAtLevel(CharacterLevel));
+		BossInitData.Power.GetValueAtLevel(CharacterLevel));
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetCriticalChanceAttribute(),
-		BossData.CriticalChance);
+		BossInitData.CriticalChance);
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetCriticalMultiplierAttribute(),
-		BossData.CriticalMultiplier);
+		BossInitData.CriticalMultiplier);
 	
 	// Break
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetMaxBreakAttribute(),
-		BossData.Break.GetValueAtLevel(CharacterLevel));
+		BossInitData.Break.GetValueAtLevel(CharacterLevel));
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetBreakAttribute(),
 		ASC->GetNumericAttributeBase(UBaseAttributeSet::GetMaxBreakAttribute()));
 
 	// Defence
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetDefenseAttribute(),
-		BossData.Defence.GetValueAtLevel(CharacterLevel));
+		BossInitData.Defence.GetValueAtLevel(CharacterLevel));
 	
 	// Ultimate
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetMaxUltimateAttribute(),
-		BossData.Ultimate.GetValueAtLevel(CharacterLevel));
+		BossInitData.Ultimate.GetValueAtLevel(CharacterLevel));
 	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetUltimateAttribute(),
 		0.0f);
 }
