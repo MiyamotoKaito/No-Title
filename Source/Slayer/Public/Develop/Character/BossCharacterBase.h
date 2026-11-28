@@ -41,8 +41,8 @@ protected:
 	
 	UPROPERTY()
 	TObjectPtr<UBaseAttributeSet> BaseAttributeSet;
-	
-	FBossAttributeInitData BossData;
+	UPROPERTY(Transient)
+	FBossAttributeInitData BossInitData;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "0_Slayer|Data")
 	int32 CharacterLevel = 1;
